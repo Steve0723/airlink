@@ -330,7 +330,20 @@ private fun HomeScreen(device: Device, onDisconnect: () -> Unit) {
                             )
                             Text(humanSize(f.size), color = Muted, fontSize = 12.sp)
                         }
-                        Spacer(Modifier.width(10.dp))
+                        TextButton(onClick = {
+                            scope.launch {
+                                val url = withContext(Dispatchers.IO) {
+                                    runCatching { Api(device).createShare(f.id) }.getOrNull()
+                                }
+                                if (url.isNullOrBlank()) {
+                                    toast(ctx, "生成分享链接失败")
+                                } else {
+                                    shareLink(ctx, url)
+                                }
+                            }
+                        }) { Text("分享", fontSize = 13.sp, color = Muted) }
+
+                        Spacer(Modifier.width(4.dp))
                         OutlinedButton(
                             onClick = { startDownload(ctx, device, f) },
                             shape = RoundedCornerShape(9.dp),
@@ -471,6 +484,14 @@ private fun writeClipboard(ctx: Context, text: String) {
 
 private fun toast(ctx: Context, msg: String) {
     Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+}
+
+private fun shareLink(ctx: Context, url: String) {
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, url)
+    }
+    ctx.startActivity(Intent.createChooser(send, "分享链接"))
 }
 
 private fun startDownload(ctx: Context, device: Device, f: FileItem) {

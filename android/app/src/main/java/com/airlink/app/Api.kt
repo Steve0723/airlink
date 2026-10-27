@@ -136,6 +136,19 @@ class Api(private val device: Device) {
         }
     }
 
+    /** 生成 4 位短链，24 小时有效、无提取码。 */
+    fun createShare(fileId: String): String {
+        val body = JSONObject()
+            .put("fileId", fileId)
+            .put("ttlHours", 24)
+            .toString()
+            .toRequestBody(jsonType)
+        client.newCall(builder("/api/v1/shares").post(body).build()).execute().use { r ->
+            if (!r.isSuccessful) throw ApiException("生成分享链接失败")
+            return JSONObject(r.body?.string().orEmpty()).optString("url")
+        }
+    }
+
     fun downloadUrl(fileId: String): String =
         "${device.base}/api/v1/files/$fileId?t=${device.token}"
 
