@@ -18,6 +18,7 @@ Windows 原生桌面程序 + 安卓原生 App。同一个 WiFi 下扫码即传�
 
 ```
 airlink/
+├── relay/               公网中转服务（Go，纯标准库，可选部署）
 ├── server/              Windows 端（Go + Walk 原生 Win32 控件）
 │   ├── main.go          启动、命令行参数
 │   ├── gui.go           窗口、二维码、IP 选择器、文件列表
@@ -137,7 +138,53 @@ gradle assembleDebug
 
 第二点很重要：quickdrop 的文件本来就是"传完就走"，删掉无所谓；AirLink 的文件是你自己攒的，过期删链接可以，删文件就是数据丢失。
 
-**注意链接里是内网 IP**，只有同一 WiFi 下的人能打开。要跨网分享，得把 quickdrop 部署到公网服务器——那是另一套东西，不在这份代码里。
+**注意链接里是内网 IP**，只有同一 WiFi 下的人能打开。要跨网络分享，用下面的公网中转。
+
+## 用域名分享（公网中转）
+
+内网链接出了 WiFi 就打不开。想让对方在任何网络都能下、而且你关掉电脑也不影响，就需要一台公网服务器做中转——这就是 `relay/`。
+
+链路是：**AirLink 上传文件到 relay → relay 生成 8 位短链 → 对方随时下载 → 到期自动删**。
+
+### 部署 relay
+
+一台有公网 IP 的服务器，域名 A 记录指过来，然后：
+
+```bash
+cd relay
+cp .env.example .env
+# 编辑 .env：填域名，生成密钥 openssl rand -hex 24
+docker compose up -d
+```
+
+Caddy 会自动申请 HTTPS 证书。起来后访问 `https://你的域名/healthz` 应该返回 `{"ok":true,...}`。
+
+不用 Docker 也行，`relay/` 是纯标准库的 Go 程序：
+
+```bash
+go build -o relay . && ./relay -addr :8080 -data ./data -key 你的密钥 -base https://你的域名
+```
+
+### 配置客户端
+
+```bash
+AirLink.exe -relay https://drop.example.com -relay-key 你的密钥
+```
+
+配好之后，分享对话框里会多一个「上传到公网」勾选框（默认勾上）：
+
+- **勾上** → 文件传到 relay，拿到 `https://drop.example.com/s/k7m2x9qp`，关电脑也能下
+- **不勾** → 走局域网直链，速度快但不跨网
+
+公网链接不支持提取码（勾上后会禁掉输入框），因为 8 位短码本身已经足够抗枚举——32⁸ ≈ 1.1 万亿种组合，扫不出来。
+
+### 为什么不复用 quickdrop
+
+quickdrop 是带账号体系的 Web 应用，没有对外的 API 密钥，硬接要改它的会话逻辑。`relay/` 只做一件事——收文件、给短链、到期删，200 行代码，接口就一个 `POST /api/v1/put`。两者可以并存：quickdrop 给人用，relay 给 AirLink 用。
+
+### 成本
+
+按 24 小时过期算，占用 = 你最近一天上传的总量。传 10 GB 就占 10 GB 磁盘，过期自动释放。带宽是主要开销，1 GB 文件双向计费 2 GB。
 
 ## 已知限制
 
