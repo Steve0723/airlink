@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AirLink</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo"></span>
+    <span class="name">AirLink</span>
+  </div>
+  <div class="device" id="device">连接中…</div>
+</header>
+
+<main>
+  <section class="card pair">
+    <div class="qr-wrap">
+      <img id="qr" src="/api/console/qr.png" alt="配对二维码" width="220" height="220">
+    </div>
+    <div class="pair-body">
+      <h1>手机扫码配对</h1>
+      <p class="muted">打开 AirLink App 扫描左侧二维码，两端在同一 WiFi 时自动走局域网直连。</p>
+      <div class="token-row">
+        <code id="token">········</code>
+        <button class="btn" id="copy">复制</button>
+        <button class="btn ghost" id="rotate">重置</button>
+      </div>
+      <ul class="eps" id="endpoints"></ul>
+      <p class="hint" id="hint"></p>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>发送到手机</h2>
+      <span class="muted" id="uploadState"></span>
+    </div>
+    <div class="drop" id="drop">
+      <strong>拖文件到这里</strong>
+      <span class="muted">或点击选择文件</span>
+    </div>
+    <input type="file" id="picker" multiple hidden>
+    <div class="bars" id="bars"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>文件</h2>
+      <span class="muted" id="count"></span>
+    </div>
+    <ul class="files" id="files"></ul>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>文本互传</h2></div>
+    <textarea id="text" rows="3" placeholder="粘贴一段文字，手机上可以直接复制"></textarea>
+    <div class="row-end"><button class="btn" id="sendText">发送</button></div>
+    <ul class="texts" id="texts"></ul>
+  </section>
+</main>
+
+<footer class="foot">
+  <span id="version"></span>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

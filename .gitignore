@@ -1,0 +1,23 @@
+# Go
+server/airlink.exe
+server/*.exe
+server/dist/
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.iml
+*.apk
+
+# 系统
+Thumbs.db
+.DS_Store
+
+# 数据
+data/
+
+# Go 覆盖运行中的 exe 会产生这个备份
+*.exe~

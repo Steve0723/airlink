@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1d9e75">
+<title>AirLink</title>
+<link rel="stylesheet" href="/static/m.css">
+</head>
+<body>
+<header>
+  <div class="brand"><span class="logo"></span><span id="dev">连接中…</span></div>
+  <div class="stat" id="stat"></div>
+</header>
+
+<main>
+  <section class="card">
+    <button class="send" id="pick">
+      <span class="send-icon"></span>
+      <span>选择文件发送到电脑</span>
+    </button>
+    <input type="file" id="file" multiple hidden>
+    <div class="bars" id="bars"></div>
+  </section>
+
+  <section class="card">
+    <h2>电脑上的文件 <span id="count"></span></h2>
+    <ul class="files" id="files"></ul>
+  </section>
+
+  <section class="card">
+    <h2>剪贴板</h2>
+    <div class="row">
+      <input id="text" placeholder="发送一段文字到电脑" autocomplete="off">
+      <button id="sendText">发送</button>
+    </div>
+    <p class="note">浏览器读不到系统剪贴板（非 HTTPS），只能发文字、收文字。</p>
+    <ul class="texts" id="texts"></ul>
+  </section>
+</main>
+
+<div class="tip" id="tip"></div>
+
+<script src="/static/m.js"></script>
+</body>
+</html>
