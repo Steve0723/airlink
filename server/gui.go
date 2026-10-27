@@ -204,6 +204,7 @@ func (g *gui) build() error {
 					PushButton{Text: "添加文件", OnClicked: g.pickFiles},
 					PushButton{Text: "打开文件夹", OnClicked: g.openFolder},
 					PushButton{Text: "删除选中", OnClicked: g.deleteSelected},
+					PushButton{Text: "分享选中", OnClicked: g.shareSelected},
 					HSpacer{},
 					PushButton{Text: "刷新", OnClicked: g.refreshFiles},
 				},
@@ -377,6 +378,93 @@ func (g *gui) addPaths(paths []string) {
 	if added > 0 {
 		g.hintLbl.SetText(fmt.Sprintf("已添加 %d 个文件", added))
 	}
+}
+
+// shareSelected 生成一条 4 位短链，别人不装 App 也能在浏览器里下载。
+func (g *gui) shareSelected() {
+	i := g.tv.CurrentIndex()
+	if i < 0 || i >= len(g.model.items) {
+		_ = g.clipLbl.SetText("先在列表里选中一个文件")
+		return
+	}
+	file := g.model.items[i]
+
+	ttlLabels := []string{"1 小时", "24 小时", "7 天"}
+	ttlHours := []int{1, 24, 168}
+
+	var dlg *walk.Dialog
+	var ttlBox *walk.ComboBox
+	var pwEdit *walk.LineEdit
+	var okPB, cancelPB *walk.PushButton
+
+	err := Dialog{
+		AssignTo: &dlg,
+		Title:    "分享「" + file.Name + "」",
+		Icon:     walk.IconInformation(),
+		MinSize:  Size{Width: 420, Height: 240},
+		Layout:   VBox{},
+		Children: []Widget{
+			Composite{
+				Layout: Grid{Columns: 2},
+				Children: []Widget{
+					Label{Text: "有效期"},
+					ComboBox{AssignTo: &ttlBox, Model: ttlLabels, CurrentIndex: 1},
+					Label{Text: "提取码"},
+					LineEdit{AssignTo: &pwEdit, MaxLength: 4},
+					Label{Text: ""},
+					Label{
+						Text: "可选，4 位数字；留空则拿到链接就能下",
+						Font: Font{PointSize: 8},
+					},
+				},
+			},
+			Composite{
+				Layout: HBox{},
+				Children: []Widget{
+					HSpacer{},
+					PushButton{AssignTo: &okPB, Text: "生成链接", OnClicked: func() { dlg.Accept() }},
+					PushButton{AssignTo: &cancelPB, Text: "取消", OnClicked: func() { dlg.Cancel() }},
+				},
+			},
+		},
+	}.Create(g.mw)
+	if err != nil {
+		walk.MsgBox(g.mw, "打开对话框失败", err.Error(), walk.MsgBoxIconError)
+		return
+	}
+	dlg.SetDefaultButton(okPB)
+	dlg.SetCancelButton(cancelPB)
+
+	if dlg.Run() != walk.DlgCmdOK {
+		return
+	}
+
+	pw := strings.TrimSpace(pwEdit.Text())
+	if pw != "" && (len(pw) != 4 || !isDigits(pw)) {
+		walk.MsgBox(g.mw, "提取码无效", "提取码必须是 4 位数字。", walk.MsgBoxIconWarning)
+		return
+	}
+
+	idx := ttlBox.CurrentIndex()
+	if idx < 0 || idx >= len(ttlHours) {
+		idx = 1
+	}
+	share, err := g.srv.store.AddShare(file.ID, pw, time.Duration(ttlHours[idx])*time.Hour)
+	if err != nil {
+		walk.MsgBox(g.mw, "生成失败", err.Error(), walk.MsgBoxIconError)
+		return
+	}
+
+	link := g.srv.shareURL(share.Code)
+	_ = walk.Clipboard().SetText(link)
+
+	msg := link + "\r\n\r\n有效期至 " + share.ExpiresAt.Format("01-02 15:04")
+	if pw != "" {
+		msg += "\r\n提取码：" + pw
+	}
+	msg += "\r\n\r\n链接已复制到剪贴板，发给对方即可。"
+	walk.MsgBox(g.mw, "分享链接已生成", msg, walk.MsgBoxIconInformation)
+	_ = g.clipLbl.SetText("已分享：" + share.Code)
 }
 
 func (g *gui) openFolder() {

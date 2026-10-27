@@ -68,6 +68,7 @@ type Store struct {
 	texts    []TextEntry
 	textPath string
 	clips    []ClipItem
+	shares   []Share
 }
 
 func NewStore(dataDir string) (*Store, error) {
@@ -87,6 +88,7 @@ func NewStore(dataDir string) (*Store, error) {
 	if raw, err := os.ReadFile(s.clipPath()); err == nil {
 		_ = json.Unmarshal(raw, &s.clips)
 	}
+	s.shares = loadShares(s.sharesPath())
 	s.cleanOrphans()
 	return s, nil
 }

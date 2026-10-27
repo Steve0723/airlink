@@ -26,6 +26,7 @@ type Server struct {
 	mu         sync.RWMutex // 保护 state.Token / PreferredIP
 	cfg        string       // state.json 路径
 	mobilePage []byte       // /j 页面，给手机浏览器用
+	sharePage  []byte       // /s/{code} 分享落地页
 
 	// onClip 由窗口注入：手机发来剪贴板时回调，用于自动复制到 Windows 剪贴板。
 	onClip func(ClipItem)
@@ -454,6 +455,13 @@ func (s *Server) routes(static http.Handler) http.Handler {
 	mux.HandleFunc("GET /api/v1/clipboard", s.requireToken(s.handleGetClips))
 	mux.HandleFunc("POST /api/v1/clipboard", s.requireToken(s.handlePostClip))
 	mux.HandleFunc("POST /api/console/clipboard", s.loopbackOnly(s.handlePushLocalClip))
+
+	mux.HandleFunc("POST /api/v1/shares", s.requireToken(s.handleCreateShare))
+	mux.HandleFunc("GET /api/v1/shares", s.requireToken(s.handleListShares))
+	mux.HandleFunc("DELETE /api/v1/shares/{code}", s.requireToken(s.handleDeleteShare))
+	mux.HandleFunc("GET /s/{code}", s.handleSharePage)
+	mux.HandleFunc("GET /s/{code}/info", s.handleShareInfo)
+	mux.HandleFunc("GET /s/{code}/f", s.handleShareDownload)
 
 	mux.HandleFunc("GET /api/console/state", s.loopbackOnly(s.handleConsoleState))
 	mux.HandleFunc("GET /api/console/qr.png", s.loopbackOnly(s.handleConsoleQR))

@@ -82,8 +82,19 @@ func main() {
 	if err != nil {
 		fatal("手机页面缺失: %v", err)
 	}
+	sharePage, err := fs.ReadFile(sub, "share.html")
+	if err != nil {
+		fatal("分享页面缺失: %v", err)
+	}
 
-	srv := &Server{store: store, state: state, port: *port, cfg: statePath, mobilePage: mobilePage}
+	srv := &Server{
+		store:      store,
+		state:      state,
+		port:       *port,
+		cfg:        statePath,
+		mobilePage: mobilePage,
+		sharePage:  sharePage,
+	}
 	handler := srv.routes(http.FileServer(http.FS(sub)))
 
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
@@ -98,6 +109,15 @@ func main() {
 	go func() {
 		if err := httpSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			fatal("服务异常退出: %v", err)
+		}
+	}()
+
+	// 每分钟清一次过期分享记录（只删记录，文件保留）。
+	go func() {
+		for range time.Tick(time.Minute) {
+			if n := store.PurgeExpiredShares(); n > 0 {
+				verbosef("清理了 %d 条过期分享", n)
+			}
 		}
 	}()
 

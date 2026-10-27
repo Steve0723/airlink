@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1d9e75">
+<title>文件分享 · AirLink</title>
+<style>
+  :root {
+    --bg: #f4f6f5; --surface: #fff; --border: #e3e7e5;
+    --text: #1c1f1e; --muted: #6b7370; --accent: #1d9e75; --accent-dark: #0f6e56;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .card {
+    width: 100%; max-width: 380px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 18px; padding: 28px 24px;
+    text-align: center;
+  }
+  .logo {
+    width: 46px; height: 46px; border-radius: 13px; background: var(--accent);
+    margin: 0 auto 16px; position: relative;
+  }
+  .logo::after {
+    content: ""; position: absolute; inset: 13px 9px;
+    border-top: 2.5px solid #fff; border-bottom: 2.5px solid #fff;
+  }
+  h1 { font-size: 17px; margin: 0 0 6px; font-weight: 600; word-break: break-all; }
+  .size { color: var(--muted); font-size: 13px; margin: 0; }
+  .meta { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
+  .pin {
+    display: flex; gap: 8px; margin: 20px 0 0;
+  }
+  .pin input {
+    flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: 11px;
+    padding: 13px 14px; font-size: 16px; letter-spacing: 4px; text-align: center;
+    font-family: inherit; outline: none;
+  }
+  .pin input:focus { border-color: var(--accent); }
+  .btn {
+    display: block; width: 100%; margin-top: 16px; padding: 14px;
+    border: none; border-radius: 12px; background: var(--accent); color: #fff;
+    font-size: 15px; font-family: inherit; font-weight: 500; cursor: pointer;
+    text-decoration: none; text-align: center;
+  }
+  .btn:active { background: var(--accent-dark); }
+  .btn[disabled] { background: #cfd6d3; cursor: default; }
+  .err { color: #c0453f; font-size: 13px; margin-top: 12px; min-height: 20px; }
+  .foot { color: var(--muted); font-size: 11px; margin-top: 22px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo"></div>
+  <h1 id="name">加载中…</h1>
+  <p class="size" id="size"></p>
+
+  <div class="pin" id="pinRow" style="display:none">
+    <input id="pin" inputmode="numeric" maxlength="4" placeholder="提取码">
+  </div>
+
+  <a class="btn" id="dl" href="#" style="display:none">下载</a>
+  <button class="btn" id="unlock" style="display:none">输入提取码</button>
+
+  <div class="err" id="err"></div>
+  <div class="foot" id="foot">由 AirLink 分享 · 链接到期自动失效</div>
+</div>
+
+<script>
+const code = location.pathname.split("/").filter(Boolean).pop();
+const $ = (id) => document.getElementById(id);
+
+const fmtSize = (n) => {
+  if (n < 1024) return n + " B";
+  const u = ["KB", "MB", "GB", "TB"];
+  let i = -1;
+  do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
+  return n.toFixed(n < 10 ? 1 : 0) + " " + u[i];
+};
+
+const fmtTime = (iso) => {
+  const d = new Date(iso);
+  const p = (x) => String(x).padStart(2, "0");
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+function setDownload(pin) {
+  const href = `/s/${code}/f` + (pin ? "?p=" + encodeURIComponent(pin) : "");
+  $("dl").href = href;
+  $("dl").style.display = "block";
+  $("unlock").style.display = "none";
+  $("pinRow").style.display = "none";
+}
+
+(async () => {
+  let info;
+  try {
+    const r = await fetch(`/s/${code}/info`, { cache: "no-store" });
+    if (!r.ok) throw new Error();
+    info = await r.json();
+  } catch {
+    $("name").textContent = "链接已失效";
+    $("size").textContent = "";
+    $("foot").textContent = "分享已过期或文件已被删除";
+    return;
+  }
+
+  $("name").textContent = info.name;
+  $("size").textContent = fmtSize(info.size);
+  $("foot").textContent = `有效期至 ${fmtTime(info.expiresAt)}`;
+
+  if (!info.hasPassword) {
+    setDownload("");
+    return;
+  }
+
+  $("pinRow").style.display = "flex";
+  $("unlock").style.display = "block";
+  $("unlock").onclick = () => {
+    const v = $("pin").value.trim();
+    if (v.length !== 4) {
+      $("err").textContent = "请输入 4 位提取码";
+      return;
+    }
+    $("err").textContent = "";
+    setDownload(v);
+  };
+  $("pin").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("unlock").click();
+  });
+})();
+</script>
+</body>
+</html>
