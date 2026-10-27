@@ -27,6 +27,9 @@ type Server struct {
 	cfg        string       // state.json 路径
 	mobilePage []byte       // /j 页面，给手机浏览器用
 	sharePage  []byte       // /s/{code} 分享落地页
+	publicBase string       // 配置后分享链接用域名而不是内网 IP
+	relayURL   string       // 公网中转服务地址
+	relayKey   string       // 中转服务上传密钥
 
 	// onClip 由窗口注入：手机发来剪贴板时回调，用于自动复制到 Windows 剪贴板。
 	onClip func(ClipItem)

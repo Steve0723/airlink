@@ -1,0 +1,7 @@
+{$DOMAIN:localhost} {
+	encode zstd gzip
+	reverse_proxy relay:8080
+	request_body {
+		max_size 2GB
+	}
+}

@@ -39,7 +39,7 @@ func (s Share) Expired() bool {
 	return !s.ExpiresAt.IsZero() && time.Now().After(s.ExpiresAt)
 }
 
-func (s Store) sharesPath() string {
+func (s *Store) sharesPath() string {
 	return strings.TrimSuffix(s.textPath, "texts.json") + "shares.json"
 }
 
@@ -173,6 +173,10 @@ func loadShares(path string) []Share {
 // ---------- 接口 ----------
 
 func (s *Server) shareURL(code string) string {
+	// 配了公网域名就用域名，否则退回局域网地址。
+	if s.publicBase != "" {
+		return strings.TrimSuffix(s.publicBase, "/") + "/s/" + code
+	}
 	base := "http://" + strings.TrimPrefix(s.qrContent(), "http://")
 	if i := strings.Index(base, "/j?"); i > 0 {
 		base = base[:i]

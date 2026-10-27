@@ -1,0 +1,28 @@
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    environment:
+      AIRLINK_RELAY_KEY: ${AIRLINK_RELAY_KEY:?请在 .env 里设置上传密钥}
+      AIRLINK_RELAY_BASE: https://${DOMAIN:?请在 .env 里设置域名}
+    volumes:
+      - relay_data:/data
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [relay]
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  relay_data:
+  caddy_data:
+  caddy_config:

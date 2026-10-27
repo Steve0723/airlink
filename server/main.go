@@ -38,6 +38,9 @@ func main() {
 	dataDir := flag.String("data", "", "数据目录（默认 %AppData%\\AirLink）")
 	name := flag.String("name", "", "设备名（默认计算机名）")
 	noGUI := flag.Bool("no-gui", false, "不开窗口，纯命令行运行（调试用）")
+	publicURL := flag.String("public-url", "", "对外分享的域名，如 https://drop.example.com（配合 frp 或 Cloudflare Tunnel）")
+	relayURL := flag.String("relay", "", "公网中转服务地址，如 https://drop.example.com（配置后分享可选上传到公网）")
+	relayKey := flag.String("relay-key", "", "中转服务的上传密钥")
 	flag.BoolVar(&verbose, "v", false, "输出详细日志")
 	flag.Parse()
 
@@ -94,6 +97,9 @@ func main() {
 		cfg:        statePath,
 		mobilePage: mobilePage,
 		sharePage:  sharePage,
+		publicBase: *publicURL,
+		relayURL:   *relayURL,
+		relayKey:   *relayKey,
 	}
 	handler := srv.routes(http.FileServer(http.FS(sub)))
 

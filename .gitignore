@@ -3,6 +3,10 @@ server/airlink.exe
 server/*.exe
 server/dist/
 
+# Relay
+relay/relay.exe
+relay/data/
+
 # Android
 android/.gradle/
 android/build/
