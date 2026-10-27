@@ -47,8 +47,8 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
-
+      # ubuntu-latest 已预装 Android SDK，不需要 android-actions/setup-android
+      # （它还在尝试安装已下架的 tools 包，会直接失败）
       - uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: "8.7"
