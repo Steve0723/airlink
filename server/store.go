@@ -272,6 +272,20 @@ func (s *Store) FinishUpload(id string) (FileEntry, error) {
 	if !up.Complete() {
 		return FileEntry{}, fmt.Errorf("还有 %d 个分片未到达", up.TotalChunks-up.ReceivedCount())
 	}
+	// 同名同大小视为重复上传（比如反复备份同一批照片），直接复用已有文件，
+	// 不再生成 "IMG_001 (2).jpg" 这种副本。
+	existing := filepath.Join(s.filesDir, up.Name)
+	if info, statErr := os.Stat(existing); statErr == nil && info.Size() == up.Size {
+		_ = os.Remove(s.partPath(id))
+		_ = os.Remove(s.metaPath(id))
+		return FileEntry{
+			ID:      fileID(up.Name),
+			Name:    up.Name,
+			Size:    up.Size,
+			ModTime: info.ModTime(),
+		}, nil
+	}
+
 	name := s.uniqueName(up.Name)
 	dst := filepath.Join(s.filesDir, name)
 	if err := os.Rename(s.partPath(id), dst); err != nil {
