@@ -4,11 +4,14 @@ import android.Manifest
 import android.app.DownloadManager
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -60,6 +63,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.Dispatchers
@@ -262,6 +266,26 @@ private fun HomeScreen(device: Device, onDisconnect: () -> Unit) {
         TransferService.start(ctx, device, uris.map { it.toString() })
     }
 
+    // 相册备份：只读 MediaStore，按时间倒序取最近的图片。
+    var backupRequested by remember { mutableStateOf(false) }
+    val photoPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) backupRequested = true else toast(ctx, "没有相册权限")
+    }
+
+    LaunchedEffect(backupRequested) {
+        if (!backupRequested) return@LaunchedEffect
+        backupRequested = false
+        val uris = withContext(Dispatchers.IO) { recentPhotos(ctx, 200) }
+        if (uris.isEmpty()) {
+            toast(ctx, "没有找到照片")
+        } else {
+            toast(ctx, "开始备份 ${uris.size} 张照片")
+            TransferService.start(ctx, device, uris.map { it.toString() })
+        }
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(14.dp),
@@ -299,6 +323,34 @@ private fun HomeScreen(device: Device, onDisconnect: () -> Unit) {
                 if (error.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
                     Text(error, color = Color(0xFFC0453F), fontSize = 12.sp)
+                }
+            }
+        }
+
+        item {
+            Card {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("照片备份", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text("把最近 200 张图片传到电脑", color = Muted, fontSize = 12.sp)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            val perm = if (Build.VERSION.SDK_INT >= 33) {
+                                Manifest.permission.READ_MEDIA_IMAGES
+                            } else {
+                                Manifest.permission.READ_EXTERNAL_STORAGE
+                            }
+                            if (ContextCompat.checkSelfPermission(ctx, perm) ==
+                                PackageManager.PERMISSION_GRANTED
+                            ) {
+                                backupRequested = true
+                            } else {
+                                photoPermLauncher.launch(perm)
+                            }
+                        },
+                        shape = RoundedCornerShape(9.dp),
+                    ) { Text("备份", fontSize = 13.sp, color = AccentDark) }
                 }
             }
         }
@@ -484,6 +536,30 @@ private fun writeClipboard(ctx: Context, text: String) {
 
 private fun toast(ctx: Context, msg: String) {
     Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+}
+
+// 按拍摄时间倒序取最近的图片。重复备份不会产生副本——服务端按同名同大小去重。
+private fun recentPhotos(ctx: Context, limit: Int): List<Uri> {
+    val projection = arrayOf(MediaStore.Images.Media._ID)
+    val out = ArrayList<Uri>()
+    ctx.contentResolver.query(
+        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+        projection,
+        null,
+        null,
+        "${MediaStore.Images.Media.DATE_ADDED} DESC",
+    )?.use { c ->
+        val idCol = c.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+        while (c.moveToNext() && out.size < limit) {
+            out.add(
+                ContentUris.withAppendedId(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    c.getLong(idCol),
+                )
+            )
+        }
+    }
+    return out
 }
 
 private fun shareLink(ctx: Context, url: String) {
