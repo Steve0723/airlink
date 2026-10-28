@@ -229,6 +229,21 @@ func (s *Server) upsertPhone(id, name string) {
 	_ = saveJSON(s.cfg, s.state)
 }
 
+// removePhone 忘掉一台手机。已投递的中转条目会自然过期，不做特殊处理。
+func (s *Server) removePhone(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out := make([]PhoneInfo, 0, len(s.state.Phones))
+	for _, p := range s.state.Phones {
+		if p.ID != id {
+			out = append(out, p)
+		}
+	}
+	s.state.Phones = out
+	_ = saveJSON(s.cfg, s.state)
+}
+
 func (s *Server) phones() []PhoneInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

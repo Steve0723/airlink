@@ -414,31 +414,57 @@ func (g *gui) openSettings() {
 	var urlEdit, keyEdit *walk.LineEdit
 	var okPB, cancelPB *walk.PushButton
 
+	phones := g.srv.phones()
+	var phoneList *walk.ListBox
+
+	children := []Widget{
+		Label{Text: "公网兜底：填了之后，手机不在同一 WiFi 时文件会自动走中转服务器。"},
+		Label{Text: "中转地址（例如 https://drop.example.com）"},
+		LineEdit{AssignTo: &urlEdit, Text: g.srv.relayURL()},
+		Label{Text: "上传密钥"},
+		LineEdit{AssignTo: &keyEdit, Text: g.srv.relayKey()},
+		Label{
+			Text: "两项都留空表示不用公网兜底。改完手机需要重新扫一次二维码。",
+			Font: Font{PointSize: 8},
+		},
+		Label{Text: "已配对的手机（「发送到手机」时可选）"},
+		ListBox{AssignTo: &phoneList, Model: phoneLabels(phones), MaxSize: Size{Height: 96}},
+		Composite{
+			Layout: HBox{MarginsZero: true},
+			Children: []Widget{
+				PushButton{
+					Text: "移除选中",
+					OnClicked: func() {
+						i := phoneList.CurrentIndex()
+						if i < 0 || i >= len(phones) {
+							return
+						}
+						g.srv.removePhone(phones[i].ID)
+						phones = append(phones[:i], phones[i+1:]...)
+						_ = phoneList.SetModel(phoneLabels(phones))
+						_ = g.clipLbl.SetText("已移除配对手机")
+					},
+				},
+				HSpacer{},
+			},
+		},
+		Composite{
+			Layout: HBox{},
+			Children: []Widget{
+				HSpacer{},
+				PushButton{AssignTo: &okPB, Text: "保存", OnClicked: func() { dlg.Accept() }},
+				PushButton{AssignTo: &cancelPB, Text: "取消", OnClicked: func() { dlg.Cancel() }},
+			},
+		},
+	}
+
 	err := Dialog{
 		AssignTo: &dlg,
 		Title:    "设置",
 		Icon:     walk.IconInformation(),
-		MinSize:  Size{Width: 540, Height: 300},
+		MinSize:  Size{Width: 540, Height: 460},
 		Layout:   VBox{},
-		Children: []Widget{
-			Label{Text: "公网兜底：填了之后，手机不在同一 WiFi 时文件会自动走中转服务器。"},
-			Label{Text: "中转地址（例如 https://drop.example.com）"},
-			LineEdit{AssignTo: &urlEdit, Text: g.srv.relayURL()},
-			Label{Text: "上传密钥"},
-			LineEdit{AssignTo: &keyEdit, Text: g.srv.relayKey()},
-			Label{
-				Text: "两项都留空表示不用公网兜底。改完手机需要重新扫一次二维码。",
-				Font: Font{PointSize: 8},
-			},
-			Composite{
-				Layout: HBox{},
-				Children: []Widget{
-					HSpacer{},
-					PushButton{AssignTo: &okPB, Text: "保存", OnClicked: func() { dlg.Accept() }},
-					PushButton{AssignTo: &cancelPB, Text: "取消", OnClicked: func() { dlg.Cancel() }},
-				},
-			},
-		},
+		Children: children,
 	}.Create(g.mw)
 	if err != nil {
 		walk.MsgBox(g.mw, "打开设置失败", err.Error(), walk.MsgBoxIconError)
@@ -505,6 +531,13 @@ func (g *gui) sendToPhone() {
 	}
 
 	phone := phones[0]
+	if len(phones) > 1 {
+		chosen, ok := g.pickPhone(phones)
+		if !ok {
+			return
+		}
+		phone = chosen
+	}
 	_ = g.clipLbl.SetText("正在发送到 " + phone.Name + "…")
 
 	go func() {
@@ -541,6 +574,63 @@ func (g *gui) sendToPhone() {
 				walk.MsgBoxIconInformation)
 		})
 	}()
+}
+
+// pickPhone 有多台配对手机时让用户选，避免总是发给列表第一个。
+func (g *gui) pickPhone(phones []PhoneInfo) (PhoneInfo, bool) {
+	var dlg *walk.Dialog
+	var box *walk.ComboBox
+	var okPB, cancelPB *walk.PushButton
+
+	labels := make([]string, len(phones))
+	for i, p := range phones {
+		labels[i] = fmt.Sprintf("%s · 最近 %s", p.Name, p.LastSeen.Format("01-02 15:04"))
+	}
+
+	err := Dialog{
+		AssignTo: &dlg,
+		Title:    "发送到哪台手机",
+		Icon:     walk.IconInformation(),
+		MinSize:  Size{Width: 420, Height: 190},
+		Layout:   VBox{},
+		Children: []Widget{
+			Label{Text: "这台文件会投递到中转，对应手机打开 App 即可接收。"},
+			ComboBox{AssignTo: &box, Model: labels, CurrentIndex: 0},
+			Composite{
+				Layout: HBox{},
+				Children: []Widget{
+					HSpacer{},
+					PushButton{AssignTo: &okPB, Text: "发送", OnClicked: func() { dlg.Accept() }},
+					PushButton{AssignTo: &cancelPB, Text: "取消", OnClicked: func() { dlg.Cancel() }},
+				},
+			},
+		},
+	}.Create(g.mw)
+	if err != nil {
+		return PhoneInfo{}, false
+	}
+	dlg.SetDefaultButton(okPB)
+	dlg.SetCancelButton(cancelPB)
+
+	if dlg.Run() != walk.DlgCmdOK {
+		return PhoneInfo{}, false
+	}
+	i := box.CurrentIndex()
+	if i < 0 || i >= len(phones) {
+		return PhoneInfo{}, false
+	}
+	return phones[i], true
+}
+
+func phoneLabels(phones []PhoneInfo) []string {
+	if len(phones) == 0 {
+		return []string{"（还没有配对过的手机）"}
+	}
+	out := make([]string, len(phones))
+	for i, p := range phones {
+		out[i] = fmt.Sprintf("%s · 最近 %s", p.Name, p.LastSeen.Format("01-02 15:04"))
+	}
+	return out
 }
 
 func (g *gui) openFolder() {
