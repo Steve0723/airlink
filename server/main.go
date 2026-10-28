@@ -40,6 +40,7 @@ func main() {
 	noGUI := flag.Bool("no-gui", false, "不开窗口，纯命令行运行（调试用）")
 	relayURL := flag.String("relay", "", "公网中转服务地址（也可在界面「设置」里填）")
 	relayKey := flag.String("relay-key", "", "中转服务的上传密钥")
+	mdnsProbe := flag.Bool("mdns-probe", false, "只做 mDNS 自检：广播并浏览几秒后退出")
 	flag.BoolVar(&verbose, "v", false, "输出详细日志")
 	flag.Parse()
 
@@ -116,6 +117,22 @@ func main() {
 	}()
 
 	srv.startRelayPoller()
+
+	stopDiscovery := srv.startDiscovery()
+	defer stopDiscovery()
+
+	if *mdnsProbe {
+		time.Sleep(time.Second)
+		fmt.Println("--- 局域网内发现的 AirLink 服务 ---")
+		lines := probeMDNS(4 * time.Second)
+		if len(lines) == 0 {
+			fmt.Println("(没发现任何服务)")
+		}
+		for _, l := range lines {
+			fmt.Println(l)
+		}
+		return
+	}
 
 	if *noGUI {
 		printBanner(device, *port, srv.orderedEndpoints(), srv.qrContent())

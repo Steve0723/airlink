@@ -155,6 +155,10 @@ private fun Root() {
                 Prefs.clear(ctx)
                 device = null
             },
+            onDeviceUpdated = { updated ->
+                Prefs.save(ctx, updated)
+                device = updated
+            },
         )
     }
 }
@@ -223,7 +227,11 @@ private fun ConnectScreen(connecting: Boolean, error: String, onScan: () -> Unit
 }
 
 @Composable
-private fun HomeScreen(device: Device, onDisconnect: () -> Unit) {
+private fun HomeScreen(
+    device: Device,
+    onDisconnect: () -> Unit,
+    onDeviceUpdated: (Device) -> Unit,
+) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -238,6 +246,7 @@ private fun HomeScreen(device: Device, onDisconnect: () -> Unit) {
     val finished by TransferBus.finished.collectAsState()
 
     var refreshKey by remember { mutableStateOf(0) }
+    var lastDiscover by remember { mutableStateOf(0L) }
 
     // 电脑发来的剪贴板和文件没有推送通道，前台每 4 秒主动拉一次。
     LaunchedEffect(device) {
@@ -259,7 +268,22 @@ private fun HomeScreen(device: Device, onDisconnect: () -> Unit) {
             clips = c
             error = ""
         }.onFailure {
-            error = "连接中断：${it.message}"
+            error = if (device.hasRelay) {
+                "当前不在同一局域网，仍可发送（自动走公网中转）。"
+            } else {
+                "连接中断：${it.message}"
+            }
+            // 连不上时用 mDNS 找一下：电脑 IP 变了就自动换新地址，不用重新扫码
+            val now = System.currentTimeMillis()
+            if (device.deviceId.isNotBlank() && now - lastDiscover > 12_000) {
+                lastDiscover = now
+                val found = Discovery.find(ctx)
+                    .firstOrNull { it.deviceId == device.deviceId }
+                if (found != null && (found.host != device.host || found.port != device.port)) {
+                    onDeviceUpdated(device.copy(host = found.host, port = found.port))
+                    return@LaunchedEffect
+                }
+            }
         }
         loading = false
     }
