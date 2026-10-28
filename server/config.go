@@ -17,6 +17,7 @@ type State struct {
 	Token       string    `json:"token"`
 	DeviceName  string    `json:"deviceName"`
 	PreferredIP string    `json:"preferredIP,omitempty"`
+	DeviceID    string    `json:"deviceID,omitempty"` // 公网兜底用的设备标识
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
@@ -35,10 +36,19 @@ func loadState(path, defaultName string) (*State, error) {
 			if st.DeviceName == "" {
 				st.DeviceName = defaultName
 			}
+			if st.DeviceID == "" {
+				st.DeviceID = randomToken()[:16]
+				_ = saveJSON(path, st)
+			}
 			return st, nil
 		}
 	}
-	st = &State{Token: randomToken(), DeviceName: defaultName, CreatedAt: time.Now()}
+	st = &State{
+		Token:      randomToken(),
+		DeviceName: defaultName,
+		DeviceID:   randomToken()[:16],
+		CreatedAt:  time.Now(),
+	}
 	if err := saveJSON(path, st); err != nil {
 		return nil, err
 	}

@@ -68,7 +68,6 @@ type Store struct {
 	texts    []TextEntry
 	textPath string
 	clips    []ClipItem
-	shares   []Share
 }
 
 func NewStore(dataDir string) (*Store, error) {
@@ -88,7 +87,6 @@ func NewStore(dataDir string) (*Store, error) {
 	if raw, err := os.ReadFile(s.clipPath()); err == nil {
 		_ = json.Unmarshal(raw, &s.clips)
 	}
-	s.shares = loadShares(s.sharesPath())
 	s.cleanOrphans()
 	return s, nil
 }
@@ -272,10 +270,12 @@ func (s *Store) FinishUpload(id string) (FileEntry, error) {
 	if !up.Complete() {
 		return FileEntry{}, fmt.Errorf("还有 %d 个分片未到达", up.TotalChunks-up.ReceivedCount())
 	}
-	// 同名同大小视为重复上传（比如反复备份同一批照片），直接复用已有文件，
-	// 不再生成 "IMG_001 (2).jpg" 这种副本。
+	// 重复上传（比如反复备份同一批照片）直接复用已有文件，不再生成 "IMG_001 (2).jpg"。
+	// 只比大小不够——大小相同但内容不同的两个文件会被误判成重复，那是数据丢失。
+	// 所以再比一次 SHA-256，只在完全一致时才去重。
 	existing := filepath.Join(s.filesDir, up.Name)
-	if info, statErr := os.Stat(existing); statErr == nil && info.Size() == up.Size {
+	if info, statErr := os.Stat(existing); statErr == nil && info.Size() == up.Size &&
+		sameContent(existing, s.partPath(id)) {
 		_ = os.Remove(s.partPath(id))
 		_ = os.Remove(s.metaPath(id))
 		return FileEntry{
@@ -293,6 +293,26 @@ func (s *Store) FinishUpload(id string) (FileEntry, error) {
 	}
 	_ = os.Remove(s.metaPath(id))
 	return FileEntry{ID: fileID(name), Name: name, Size: up.Size, ModTime: time.Now()}, nil
+}
+
+// sameContent 比较两个文件的内容是否完全一致。
+func sameContent(a, b string) bool {
+	ha, err1 := hashFile(a)
+	hb, err2 := hashFile(b)
+	return err1 == nil && err2 == nil && string(ha) == string(hb)
+}
+
+func hashFile(p string) ([]byte, error) {
+	f, err := os.Open(p)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return nil, err
+	}
+	return h.Sum(nil), nil
 }
 
 func (s *Store) AddText(content, from string) TextEntry {

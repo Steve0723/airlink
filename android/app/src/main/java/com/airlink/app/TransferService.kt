@@ -57,13 +57,22 @@ class TransferService : Service() {
         TransferBus.running.value = true
         TransferBus.message.value = "正在发送 ${uris.size} 个文件"
 
-        val api = Api(Device(host, port, token, name))
+        val device = Device(
+            host = host,
+            port = port,
+            token = token,
+            name = name,
+            relayUrl = intent.getStringExtra("relayUrl").orEmpty(),
+            relayKey = intent.getStringExtra("relayKey").orEmpty(),
+            deviceId = intent.getStringExtra("deviceId").orEmpty(),
+        )
+        val api = Api(device)
 
         scope.launch {
             var ok = 0
             try {
                 uris.forEachIndexed { i, uri ->
-                    uploadOne(api, uri, i + 1, uris.size)
+                    uploadOne(api, device, uri, i + 1, uris.size)
                     ok++
                 }
                 TransferBus.message.value = "已发送 $ok 个文件"
@@ -80,8 +89,23 @@ class TransferService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun uploadOne(api: Api, uri: Uri, index: Int, total: Int) {
+    // 先走局域网；连不上电脑时自动改走公网中转，用户不用做任何选择。
+    private fun uploadOne(api: Api, device: Device, uri: Uri, index: Int, total: Int) {
         val (fileName, size) = describe(uri)
+        try {
+            lanUpload(api, uri, fileName, size, index, total)
+        } catch (e: Exception) {
+            if (!device.hasRelay) throw e
+            notify("$fileName · 局域网不可达，改走公网…")
+            val ok = api.relayPut(fileName, size) {
+                contentResolver.openInputStream(uri) ?: throw e
+            }
+            if (!ok) throw ApiException("公网中转失败")
+            TransferBus.message.value = "已通过公网中转发送，电脑开机后自动收到"
+        }
+    }
+
+    private fun lanUpload(api: Api, uri: Uri, fileName: String, size: Long, index: Int, total: Int) {
         val init = api.initUpload(fileName, size)
         val buffer = ByteArray(init.chunkSize.toInt())
         var chunk = 0
@@ -182,6 +206,9 @@ class TransferService : Service() {
                 putExtra("port", device.port)
                 putExtra("token", device.token)
                 putExtra("name", device.name)
+                putExtra("relayUrl", device.relayUrl)
+                putExtra("relayKey", device.relayKey)
+                putExtra("deviceId", device.deviceId)
                 putStringArrayListExtra("uris", ArrayList(uris))
             }
             ContextCompat.startForegroundService(ctx, i)

@@ -1,11 +1,15 @@
 package com.airlink.app
 
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody
+import okio.BufferedSink
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.InputStream
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 class ApiException(message: String) : Exception(message)
@@ -136,17 +140,45 @@ class Api(private val device: Device) {
         }
     }
 
-    /** 生成 4 位短链，24 小时有效、无提取码。 */
-    fun createShare(fileId: String): String {
-        val body = JSONObject()
-            .put("fileId", fileId)
-            .put("ttlHours", 24)
-            .toString()
-            .toRequestBody(jsonType)
-        client.newCall(builder("/api/v1/shares").post(body).build()).execute().use { r ->
-            if (!r.isSuccessful) throw ApiException("生成分享链接失败")
-            return JSONObject(r.body?.string().orEmpty()).optString("url")
+    /**
+     * 公网兜底：把文件投递到中转服务的信箱，电脑端轮询取回。
+     * 用流式 body，不会把整个文件读进内存。
+     */
+    fun relayPut(name: String, size: Long, open: () -> InputStream): Boolean {
+        if (!device.hasRelay) return false
+
+        val url = device.relayUrl.trimEnd('/') + "/api/v1/inbox" +
+            "?to=" + URLEncoder.encode(device.deviceId, "UTF-8") +
+            "&name=" + URLEncoder.encode(name, "UTF-8")
+
+        val body = object : RequestBody() {
+            override fun contentType() = binType
+            override fun contentLength() = size
+            override fun writeTo(sink: BufferedSink) {
+                open().use { input ->
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        sink.write(buf, 0, n)
+                    }
+                }
+            }
         }
+
+        val req = Request.Builder()
+            .url(url)
+            .header("X-AirLink-Key", device.relayKey)
+            .post(body)
+            .build()
+
+        val relayClient = client.newBuilder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(0, TimeUnit.MILLISECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build()
+
+        relayClient.newCall(req).execute().use { return it.isSuccessful }
     }
 
     fun downloadUrl(fileId: String): String =

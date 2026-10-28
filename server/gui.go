@@ -204,7 +204,6 @@ func (g *gui) build() error {
 					PushButton{Text: "添加文件", OnClicked: g.pickFiles},
 					PushButton{Text: "打开文件夹", OnClicked: g.openFolder},
 					PushButton{Text: "删除选中", OnClicked: g.deleteSelected},
-					PushButton{Text: "分享选中", OnClicked: g.shareSelected},
 					HSpacer{},
 					PushButton{Text: "刷新", OnClicked: g.refreshFiles},
 				},
@@ -287,14 +286,18 @@ func (g *gui) updateQR() {
 
 func (g *gui) updateHint() {
 	files := g.model.items
-	hint := fmt.Sprintf("端口 %d · 已收到 %d 个文件", g.srv.port, len(files))
-	if len(g.eps) == 0 {
+	var hint string
+	switch {
+	case len(g.eps) == 0:
 		hint = "没有找到局域网地址，请检查 WiFi 或网线连接"
-	} else if g.srv.preferredIP() != "" {
-		hint = fmt.Sprintf("已指定地址 %s · 端口 %d · %d 个文件", g.srv.preferredIP(), g.srv.port, len(files))
+	case g.srv.preferredIP() != "":
+		hint = fmt.Sprintf("已指定地址 %s · 端口 %d · %d 个文件",
+			g.srv.preferredIP(), g.srv.port, len(files))
+	default:
+		hint = fmt.Sprintf("端口 %d · 已收到 %d 个文件", g.srv.port, len(files))
 	}
-	if g.srv.publicBase != "" {
-		hint += " · 分享域名 " + g.srv.publicBase
+	if g.srv.relayURL != "" {
+		hint += " · 公网兜底已开启"
 	}
 	_ = g.hintLbl.SetText(hint)
 }
@@ -381,143 +384,6 @@ func (g *gui) addPaths(paths []string) {
 	if added > 0 {
 		g.hintLbl.SetText(fmt.Sprintf("已添加 %d 个文件", added))
 	}
-}
-
-// shareSelected 生成分享链接。配了中转服务时，可以选择传到公网，
-// 这样对方拿到的是域名链接，和你电脑开不开机无关。
-func (g *gui) shareSelected() {
-	i := g.tv.CurrentIndex()
-	if i < 0 || i >= len(g.model.items) {
-		_ = g.clipLbl.SetText("先在列表里选中一个文件")
-		return
-	}
-	file := g.model.items[i]
-
-	ttlLabels := []string{"1 小时", "24 小时", "7 天"}
-	ttlHours := []int{1, 24, 168}
-
-	var dlg *walk.Dialog
-	var ttlBox *walk.ComboBox
-	var pwEdit *walk.LineEdit
-	var relayBox *walk.CheckBox
-	var okPB, cancelPB *walk.PushButton
-
-	hasRelay := g.srv.relayURL != ""
-
-	children := []Widget{
-		Composite{
-			Layout: Grid{Columns: 2},
-			Children: []Widget{
-				Label{Text: "有效期"},
-				ComboBox{AssignTo: &ttlBox, Model: ttlLabels, CurrentIndex: 1},
-				Label{Text: "提取码"},
-				LineEdit{AssignTo: &pwEdit, MaxLength: 4},
-				Label{Text: ""},
-				Label{
-					Text: "可选，4 位数字；留空则拿到链接就能下",
-					Font: Font{PointSize: 8},
-				},
-			},
-		},
-	}
-	if hasRelay {
-		children = append(children, CheckBox{
-			AssignTo: &relayBox,
-			Text:     "上传到公网（关掉电脑也能下载，链接是域名）",
-			Checked:  true,
-			OnCheckedChanged: func() {
-				// 公网链接不支持提取码，勾上就把它禁掉，避免用户以为设了有用
-				pwEdit.SetEnabled(!relayBox.Checked())
-			},
-		})
-	}
-	children = append(children, Composite{
-		Layout: HBox{},
-		Children: []Widget{
-			HSpacer{},
-			PushButton{AssignTo: &okPB, Text: "生成链接", OnClicked: func() { dlg.Accept() }},
-			PushButton{AssignTo: &cancelPB, Text: "取消", OnClicked: func() { dlg.Cancel() }},
-		},
-	})
-
-	err := Dialog{
-		AssignTo: &dlg,
-		Title:    "分享「" + file.Name + "」",
-		Icon:     walk.IconInformation(),
-		MinSize:  Size{Width: 460, Height: 260},
-		Layout:   VBox{},
-		Children: children,
-	}.Create(g.mw)
-	if err != nil {
-		walk.MsgBox(g.mw, "打开对话框失败", err.Error(), walk.MsgBoxIconError)
-		return
-	}
-	dlg.SetDefaultButton(okPB)
-	dlg.SetCancelButton(cancelPB)
-
-	if dlg.Run() != walk.DlgCmdOK {
-		return
-	}
-
-	idx := ttlBox.CurrentIndex()
-	if idx < 0 || idx >= len(ttlHours) {
-		idx = 1
-	}
-	ttl := time.Duration(ttlHours[idx]) * time.Hour
-
-	if hasRelay && relayBox.Checked() {
-		g.uploadToRelayAsync(file, ttl)
-		return
-	}
-
-	pw := strings.TrimSpace(pwEdit.Text())
-	if pw != "" && (len(pw) != 4 || !isDigits(pw)) {
-		walk.MsgBox(g.mw, "提取码无效", "提取码必须是 4 位数字。", walk.MsgBoxIconWarning)
-		return
-	}
-
-	share, err := g.srv.store.AddShare(file.ID, pw, ttl)
-	if err != nil {
-		walk.MsgBox(g.mw, "生成失败", err.Error(), walk.MsgBoxIconError)
-		return
-	}
-
-	link := g.srv.shareURL(share.Code)
-	_ = walk.Clipboard().SetText(link)
-
-	msg := link + "\r\n\r\n有效期至 " + share.ExpiresAt.Format("01-02 15:04")
-	if pw != "" {
-		msg += "\r\n提取码：" + pw
-	}
-	msg += "\r\n\r\n链接已复制到剪贴板。注意这是局域网地址，只有同一 WiFi 能打开。"
-	walk.MsgBox(g.mw, "分享链接已生成", msg, walk.MsgBoxIconInformation)
-	_ = g.clipLbl.SetText("已分享：" + share.Code)
-}
-
-// uploadToRelayAsync 大文件上传可能很久，放后台跑，界面先给个提示。
-func (g *gui) uploadToRelayAsync(file FileEntry, ttl time.Duration) {
-	_, path, err := g.srv.store.Find(file.ID)
-	if err != nil {
-		walk.MsgBox(g.mw, "文件不存在", err.Error(), walk.MsgBoxIconError)
-		return
-	}
-
-	_ = g.clipLbl.SetText("正在上传到公网…")
-	go func() {
-		res, err := g.srv.uploadToRelay(path, file.Name, ttl)
-		g.mw.Synchronize(func() {
-			if err != nil {
-				_ = g.clipLbl.SetText("公网上传失败")
-				walk.MsgBox(g.mw, "上传到公网失败", err.Error(), walk.MsgBoxIconError)
-				return
-			}
-			_ = walk.Clipboard().SetText(res.URL)
-			msg := res.URL + "\r\n\r\n有效期至 " + res.ExpiresAt.Local().Format("01-02 15:04") +
-				"\r\n\r\n链接已复制。这是域名地址，对方在任何网络都能下载，你关掉电脑也不影响。"
-			walk.MsgBox(g.mw, "公网链接已生成", msg, walk.MsgBoxIconInformation)
-			_ = g.clipLbl.SetText("已上传公网：" + res.Code)
-		})
-	}()
 }
 
 func (g *gui) openFolder() {

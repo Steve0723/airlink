@@ -7,8 +7,15 @@ data class Device(
     val port: Int,
     val token: String,
     val name: String,
+    val relayUrl: String = "",
+    val relayKey: String = "",
+    val deviceId: String = "",
 ) {
     val base: String get() = "http://$host:$port"
+
+    /** 二维码里带了中转信息，离开局域网时才能兜底。 */
+    val hasRelay: Boolean
+        get() = relayUrl.isNotBlank() && relayKey.isNotBlank() && deviceId.isNotBlank()
 }
 
 data class FileItem(val id: String, val name: String, val size: Long)
@@ -24,7 +31,15 @@ object Prefs {
         val sp = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         val host = sp.getString("host", null) ?: return null
         val token = sp.getString("token", null) ?: return null
-        return Device(host, sp.getInt("port", 6027), token, sp.getString("name", "").orEmpty())
+        return Device(
+            host = host,
+            port = sp.getInt("port", 6027),
+            token = token,
+            name = sp.getString("name", "").orEmpty(),
+            relayUrl = sp.getString("relayUrl", "").orEmpty(),
+            relayKey = sp.getString("relayKey", "").orEmpty(),
+            deviceId = sp.getString("deviceId", "").orEmpty(),
+        )
     }
 
     fun save(ctx: Context, d: Device) {
@@ -33,6 +48,9 @@ object Prefs {
             .putInt("port", d.port)
             .putString("token", d.token)
             .putString("name", d.name)
+            .putString("relayUrl", d.relayUrl)
+            .putString("relayKey", d.relayKey)
+            .putString("deviceId", d.deviceId)
             .apply()
     }
 

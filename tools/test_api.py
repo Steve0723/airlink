@@ -165,5 +165,29 @@ check("删除分享", s == 200, j)
 s, j, _ = req("GET", f"/s/{code}/info")
 check("删除后失效", s == 404, s)
 
+print("\n[10] 重复上传去重")
+
+
+def upload_chunked(name, data):
+    s, j, _ = req("POST", "/api/v1/upload/init", {"name": name, "size": len(data)}, AUTH)
+    uid, cs, total = j["id"], j["chunkSize"], j["totalChunks"]
+    for i in range(total):
+        req("PUT", f"/api/v1/upload/{uid}/{i}", data[i * cs:(i + 1) * cs], AUTH)
+    s, j, _ = req("POST", f"/api/v1/upload/{uid}/finish", {}, AUTH)
+    return j.get("file", {})
+
+
+first = upload_chunked("dup-test.jpg", b"x" * 300000)
+second = upload_chunked("dup-test.jpg", b"x" * 300000)
+check("同名同大小不产生副本", first.get("id") == second.get("id"), (first, second))
+check("文件名未被加后缀", second.get("name") == "dup-test.jpg", second.get("name"))
+
+s, j, _ = req("GET", "/api/v1/files", headers=AUTH)
+same = [f for f in j["files"] if f["name"].startswith("dup-test")]
+check("列表里只有一份", len(same) == 1, [f["name"] for f in same])
+
+other = upload_chunked("dup-test.jpg", b"y" * 300000)
+check("同名不同大小仍会保留两份", other.get("id") != first.get("id"), (first, other))
+
 print(f"\n结果：{passed} 通过，{failed} 失败\n")
 sys.exit(1 if failed else 0)

@@ -44,10 +44,11 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/v1/put", a.handlePut)
-	mux.HandleFunc("GET /s/{code}", a.handlePage)
-	mux.HandleFunc("GET /s/{code}/info", a.handleInfo)
-	mux.HandleFunc("GET /s/{code}/f", a.handleDownload)
+	// 只做设备之间的中转，没有任何对外的公开下载页
+	mux.HandleFunc("POST /api/v1/inbox", a.handlePut)
+	mux.HandleFunc("GET /api/v1/inbox", a.handleList)
+	mux.HandleFunc("GET /api/v1/inbox/{code}", a.handleDownload)
+	mux.HandleFunc("DELETE /api/v1/inbox/{code}", a.handleDelete)
 	mux.HandleFunc("GET /healthz", a.handleHealth)
 
 	// 中转文件本来就是临时的，过期就删——这点和客户端不同。
@@ -65,7 +66,7 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	log.Printf("AirLink Relay · 监听 %s · 数据目录 %s · 默认有效期 %s", *addr, *dataDir, *ttl)
+	log.Printf("AirLink Relay · 监听 %s · 数据目录 %s · 条目保留 %s", *addr, *dataDir, *ttl)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}

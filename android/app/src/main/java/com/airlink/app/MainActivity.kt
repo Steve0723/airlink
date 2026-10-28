@@ -382,20 +382,6 @@ private fun HomeScreen(device: Device, onDisconnect: () -> Unit) {
                             )
                             Text(humanSize(f.size), color = Muted, fontSize = 12.sp)
                         }
-                        TextButton(onClick = {
-                            scope.launch {
-                                val url = withContext(Dispatchers.IO) {
-                                    runCatching { Api(device).createShare(f.id) }.getOrNull()
-                                }
-                                if (url.isNullOrBlank()) {
-                                    toast(ctx, "生成分享链接失败")
-                                } else {
-                                    shareLink(ctx, url)
-                                }
-                            }
-                        }) { Text("分享", fontSize = 13.sp, color = Muted) }
-
-                        Spacer(Modifier.width(4.dp))
                         OutlinedButton(
                             onClick = { startDownload(ctx, device, f) },
                             shape = RoundedCornerShape(9.dp),
@@ -562,14 +548,6 @@ private fun recentPhotos(ctx: Context, limit: Int): List<Uri> {
     return out
 }
 
-private fun shareLink(ctx: Context, url: String) {
-    val send = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_TEXT, url)
-    }
-    ctx.startActivity(Intent.createChooser(send, "分享链接"))
-}
-
 private fun startDownload(ctx: Context, device: Device, f: FileItem) {
     val url = "${device.base}/api/v1/files/${f.id}?t=${device.token}"
     val req = DownloadManager.Request(Uri.parse(url))
@@ -585,6 +563,9 @@ private fun connectFromQr(raw: String): Device? {
     val uri = runCatching { Uri.parse(raw) }.getOrNull() ?: return null
     val token = uri.getQueryParameter("t") ?: return null
     val name = uri.getQueryParameter("n").orEmpty()
+    val relayUrl = uri.getQueryParameter("r").orEmpty()
+    val relayKey = uri.getQueryParameter("k").orEmpty()
+    val deviceId = uri.getQueryParameter("d").orEmpty()
 
     val candidates = LinkedHashSet<String>()
     uri.getQueryParameter("h")?.split(",")?.forEach { if (it.isNotBlank()) candidates.add(it.trim()) }
@@ -595,7 +576,7 @@ private fun connectFromQr(raw: String): Device? {
     for (hp in candidates) {
         val (h, p) = splitHostPort(hp) ?: continue
         if (!Api.probe(h, p)) continue
-        val dev = Device(h, p, token, name)
+        val dev = Device(h, p, token, name, relayUrl, relayKey, deviceId)
         if (runCatching { Api(dev).handshake() }.isSuccess) return dev
     }
     return null

@@ -26,8 +26,6 @@ type Server struct {
 	mu         sync.RWMutex // 保护 state.Token / PreferredIP
 	cfg        string       // state.json 路径
 	mobilePage []byte       // /j 页面，给手机浏览器用
-	sharePage  []byte       // /s/{code} 分享落地页
-	publicBase string       // 配置后分享链接用域名而不是内网 IP
 	relayURL   string       // 公网中转服务地址
 	relayKey   string       // 中转服务上传密钥
 
@@ -53,6 +51,12 @@ func (s *Server) rotateToken() string {
 	s.state.Token = randomToken()
 	_ = saveJSON(s.cfg, s.state)
 	return s.state.Token
+}
+
+func (s *Server) deviceID() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.state.DeviceID
 }
 
 func (s *Server) preferredIP() string {
@@ -373,6 +377,12 @@ func (s *Server) qrContent() string {
 	q.Set("h", qrHostList(eps))
 	q.Set("t", s.token())
 	q.Set("n", s.deviceName())
+	// 带上中转信息：手机离开局域网后靠它走公网兜底
+	if s.relayURL != "" {
+		q.Set("r", s.relayURL)
+		q.Set("d", s.deviceID())
+		q.Set("k", s.relayKey)
+	}
 	return base + "/j?" + q.Encode()
 }
 
@@ -458,13 +468,6 @@ func (s *Server) routes(static http.Handler) http.Handler {
 	mux.HandleFunc("GET /api/v1/clipboard", s.requireToken(s.handleGetClips))
 	mux.HandleFunc("POST /api/v1/clipboard", s.requireToken(s.handlePostClip))
 	mux.HandleFunc("POST /api/console/clipboard", s.loopbackOnly(s.handlePushLocalClip))
-
-	mux.HandleFunc("POST /api/v1/shares", s.requireToken(s.handleCreateShare))
-	mux.HandleFunc("GET /api/v1/shares", s.requireToken(s.handleListShares))
-	mux.HandleFunc("DELETE /api/v1/shares/{code}", s.requireToken(s.handleDeleteShare))
-	mux.HandleFunc("GET /s/{code}", s.handleSharePage)
-	mux.HandleFunc("GET /s/{code}/info", s.handleShareInfo)
-	mux.HandleFunc("GET /s/{code}/f", s.handleShareDownload)
 
 	mux.HandleFunc("GET /api/console/state", s.loopbackOnly(s.handleConsoleState))
 	mux.HandleFunc("GET /api/console/qr.png", s.loopbackOnly(s.handleConsoleQR))
