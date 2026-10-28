@@ -2,10 +2,12 @@ package com.airlink.app
 
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody
+import okhttp3.Response
 import okio.BufferedSink
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.RequestBody
+import okhttp3.Response.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.InputStream
@@ -31,6 +33,15 @@ class Api(private val device: Device) {
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
+
+    // 服务端返回的是「还有 3 个分片未到达」这类具体原因，别吞掉换成笼统提示
+    private fun errorOf(r: Response, fallback: String): String {
+        val body = runCatching { r.body?.string() }.getOrNull()
+        val msg = runCatching {
+            JSONObject(body.orEmpty()).optString("message")
+        }.getOrNull()
+        return if (!msg.isNullOrBlank()) msg else "$fallback (HTTP ${r.code})"
+    }
 
     private fun builder(path: String) = Request.Builder()
         .url(device.base + path)
@@ -59,7 +70,7 @@ class Api(private val device: Device) {
     fun initUpload(name: String, size: Long): UploadInit {
         val body = JSONObject().put("name", name).put("size", size).toString().toRequestBody(jsonType)
         client.newCall(builder("/api/v1/upload/init").post(body).build()).execute().use { r ->
-            if (!r.isSuccessful) throw ApiException("初始化上传失败")
+            if (!r.isSuccessful) throw ApiException(errorOf(r, "初始化上传失败"))
             val o = JSONObject(r.body?.string().orEmpty())
             val receivedJson = o.optJSONArray("received") ?: JSONArray()
             val received = BooleanArray(receivedJson.length()) { receivedJson.optBoolean(it, false) }
@@ -75,14 +86,14 @@ class Api(private val device: Device) {
     fun putChunk(id: String, index: Int, data: ByteArray, length: Int) {
         val body = data.toRequestBody(binType, 0, length)
         client.newCall(builder("/api/v1/upload/$id/$index").put(body).build()).execute().use { r ->
-            if (!r.isSuccessful) throw ApiException("第 ${index + 1} 片上传失败")
+            if (!r.isSuccessful) throw ApiException(errorOf(r, "第 ${index + 1} 片上传失败"))
         }
     }
 
     fun finishUpload(id: String) {
         val body = "{}".toRequestBody(jsonType)
         client.newCall(builder("/api/v1/upload/$id/finish").post(body).build()).execute().use { r ->
-            if (!r.isSuccessful) throw ApiException("合并文件失败")
+            if (!r.isSuccessful) throw ApiException(errorOf(r, "合并文件失败"))
         }
     }
 
