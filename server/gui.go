@@ -68,6 +68,7 @@ type gui struct {
 
 	autoBox  *walk.CheckBox
 	clipLbl  *walk.Label
+	textEdit *walk.LineEdit
 	autoCopy bool
 
 	srv     *Server
@@ -96,6 +97,18 @@ func runGUI(s *Server) {
 
 	g.startWatcher()
 	g.mw.Run()
+}
+
+// sendText 手动发一段文字给手机，手机端在剪贴板列表里点「复制」即可。
+func (g *gui) sendText() {
+	text := strings.TrimSpace(g.textEdit.Text())
+	if text == "" {
+		_ = g.clipLbl.SetText("输入框是空的")
+		return
+	}
+	g.srv.store.AddText(text, "电脑")
+	_ = g.textEdit.SetText("")
+	_ = g.clipLbl.SetText("已发送文字：" + clipPreview(text))
 }
 
 func (g *gui) toggleAutoCopy() {
@@ -186,6 +199,13 @@ func (g *gui) build() error {
 					},
 					HSpacer{},
 					Label{AssignTo: &g.clipLbl, Text: ""},
+				},
+			},
+			Composite{
+				Layout: HBox{MarginsZero: true},
+				Children: []Widget{
+					LineEdit{AssignTo: &g.textEdit, StretchFactor: 1},
+					PushButton{Text: "发送文字", OnClicked: g.sendText},
 				},
 			},
 			TableView{

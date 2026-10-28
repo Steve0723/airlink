@@ -18,6 +18,7 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -39,6 +40,14 @@ class TransferService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    // 用户点「中止发送」时，stopService 会走到这里，协程随之取消。
+    override fun onDestroy() {
+        scope.cancel()
+        TransferBus.running.value = false
+        TransferBus.message.value = "已中止发送"
+        super.onDestroy()
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val host = intent?.getStringExtra("host")
@@ -199,6 +208,10 @@ class TransferService : Service() {
     companion object {
         private const val CHANNEL = "airlink_transfer"
         private const val NOTIF_ID = 1001
+
+        fun cancel(ctx: Context) {
+            ctx.stopService(Intent(ctx, TransferService::class.java))
+        }
 
         fun start(ctx: Context, device: Device, uris: List<String>) {
             val i = Intent(ctx, TransferService::class.java).apply {
