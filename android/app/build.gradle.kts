@@ -11,8 +11,18 @@ android {
         applicationId = "com.airlink.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
+    }
+
+    signingConfigs {
+        // 部分国产 ROM（MIUI 等）的安装器仍然只认 v1(JAR) 签名。
+        // AGP 在 minSdk >= 24 时默认不生成 v1，缺了会报「安装包未包含任何证书」。
+        getByName("debug") {
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+        }
     }
 
     buildTypes {
