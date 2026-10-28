@@ -20,7 +20,15 @@ type State struct {
 	DeviceID    string    `json:"deviceID,omitempty"` // 公网兜底用的设备标识
 	RelayURL    string    `json:"relayURL,omitempty"`
 	RelayKey    string    `json:"relayKey,omitempty"`
+	Phones      []PhoneInfo `json:"phones,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
+}
+
+// PhoneInfo 是配对过的手机。用来把文件投递到公网中转时指定收件方。
+type PhoneInfo struct {
+	ID       string    `json:"id"`
+	Name     string    `json:"name"`
+	LastSeen time.Time `json:"lastSeen"`
 }
 
 func randomToken() string {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,6 +92,37 @@ func (s *Server) relayFetch(it relayItem) error {
 	if err := os.Rename(tmpName, filepath.Join(s.store.filesDir, final)); err != nil {
 		os.Remove(tmpName)
 		return err
+	}
+	return nil
+}
+
+// relayPut 把文件投递到中转，收件方是某台手机的 ID。
+func (s *Server) relayPut(to, name string, size int64, body io.Reader) error {
+	u := s.relayEndpoint("/api/v1/inbox?to=" + url.QueryEscape(to) +
+		"&name=" + url.QueryEscape(name))
+
+	req, err := http.NewRequest(http.MethodPost, u, body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-AirLink-Key", s.relayKey())
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.ContentLength = size
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 60 * time.Second,
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("中转服务返回 %d，请检查地址和密钥", resp.StatusCode)
 	}
 	return nil
 }

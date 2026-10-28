@@ -190,6 +190,53 @@ func (s *Server) handleHandshake(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ---------- 手机登记 ----------
+
+// handleRegisterPhone 手机配对成功后上报自己的 ID，电脑才知道该往哪投递。
+func (s *Server) handleRegisterPhone(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := readJSON(r, &body); err != nil || strings.TrimSpace(body.ID) == "" {
+		writeErr(w, http.StatusBadRequest, "缺少手机 ID")
+		return
+	}
+	if len(body.ID) > 64 {
+		writeErr(w, http.StatusBadRequest, "手机 ID 过长")
+		return
+	}
+	s.upsertPhone(body.ID, body.Name)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) upsertPhone(id, name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if name == "" {
+		name = "手机"
+	}
+	for i := range s.state.Phones {
+		if s.state.Phones[i].ID == id {
+			s.state.Phones[i].Name = name
+			s.state.Phones[i].LastSeen = time.Now()
+			_ = saveJSON(s.cfg, s.state)
+			return
+		}
+	}
+	s.state.Phones = append(s.state.Phones, PhoneInfo{ID: id, Name: name, LastSeen: time.Now()})
+	_ = saveJSON(s.cfg, s.state)
+}
+
+func (s *Server) phones() []PhoneInfo {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]PhoneInfo, len(s.state.Phones))
+	copy(out, s.state.Phones)
+	return out
+}
+
 // ---------- 文件 ----------
 
 func (s *Server) handleFiles(w http.ResponseWriter, r *http.Request) {
@@ -471,6 +518,8 @@ func (s *Server) routes(static http.Handler) http.Handler {
 
 	mux.HandleFunc("GET /api/v1/ping", s.handlePing)
 	mux.HandleFunc("POST /api/v1/handshake", s.requireToken(s.handleHandshake))
+
+	mux.HandleFunc("POST /api/v1/phone/register", s.requireToken(s.handleRegisterPhone))
 
 	mux.HandleFunc("GET /api/v1/files", s.requireToken(s.handleFiles))
 	mux.HandleFunc("GET /api/v1/files/{id}", s.requireToken(s.handleDownload))

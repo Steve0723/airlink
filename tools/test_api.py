@@ -1,6 +1,6 @@
 import json, os, random, sys, urllib.parse, urllib.request, urllib.error
 
-BASE = "http://127.0.0.1:6027"
+BASE = sys.argv[2] if len(sys.argv) > 2 else "http://127.0.0.1:6027"
 DATA = sys.argv[1] if len(sys.argv) > 1 else "/tmp/airlink-data"
 
 state = json.load(open(os.path.join(DATA, "state.json"), encoding="utf-8"))
@@ -165,6 +165,19 @@ check("列表里只有一份", len(same) == 1, [f["name"] for f in same])
 
 other = upload_chunked("dup-test.jpg", b"y" * 300000)
 check("同名不同大小仍会保留两份", other.get("id") != first.get("id"), (first, other))
+
+print("\n[10] 手机登记")
+s, j, _ = req("POST", "/api/v1/phone/register", {"id": "phone-test-1", "name": "测试机"}, AUTH)
+check("登记手机", s == 200, j)
+s, j, _ = req("POST", "/api/v1/phone/register", {"id": "", "name": "x"}, AUTH)
+check("空 ID 被拒", s == 400, s)
+s, j, _ = req("POST", "/api/v1/phone/register", {"id": "phone-test-1", "name": "改个名"}, AUTH)
+check("重复登记幂等", s == 200, s)
+
+state = json.load(open(os.path.join(DATA, "state.json"), encoding="utf-8"))
+phones = state.get("phones", [])
+check("手机已持久化", any(p["id"] == "phone-test-1" for p in phones), phones)
+check("重复登记不产生两条", len([p for p in phones if p["id"] == "phone-test-1"]) == 1, phones)
 
 print(f"\n结果：{passed} 通过，{failed} 失败\n")
 sys.exit(1 if failed else 0)

@@ -245,6 +245,8 @@ private fun HomeScreen(
     val status by TransferBus.message.collectAsState()
     val finished by TransferBus.finished.collectAsState()
 
+    var inbox by remember { mutableStateOf<List<RelayItem>>(emptyList()) }
+    var registered by remember { mutableStateOf(false) }
     var refreshKey by remember { mutableStateOf(0) }
     var lastDiscover by remember { mutableStateOf(0L) }
 
@@ -260,12 +262,23 @@ private fun HomeScreen(
         val result = withContext(Dispatchers.IO) {
             runCatching {
                 val api = Api(device)
-                api.listFiles() to api.clips()
+                val f = api.listFiles()
+                val c = api.clips()
+                val b = api.relayInbox(Prefs.phoneID(ctx))
+                Triple(f, c, b)
             }
         }
-        result.onSuccess { (f, c) ->
+        // 连上之后上报一次手机身份，电脑才知道该往哪个 ID 投递
+        if (result.isSuccess && !registered) {
+            registered = true
+            withContext(Dispatchers.IO) {
+                Api(device).registerPhone(Prefs.phoneID(ctx), android.os.Build.MODEL)
+            }
+        }
+        result.onSuccess { (f, c, b) ->
             files = f
             clips = c
+            inbox = b
             error = ""
         }.onFailure {
             error = if (device.hasRelay) {
@@ -377,6 +390,32 @@ private fun HomeScreen(
                         },
                         shape = RoundedCornerShape(9.dp),
                     ) { Text("选择", fontSize = 13.sp, color = AccentDark) }
+                }
+            }
+        }
+
+        if (inbox.isNotEmpty()) {
+            item { SectionTitle("待接收", "${inbox.size} 个") }
+            items(inbox, key = { it.code }) { r ->
+                Card {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                r.name,
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text("来自电脑 · ${humanSize(r.size)}", color = Muted, fontSize = 12.sp)
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        OutlinedButton(
+                            onClick = { downloadFromRelay(ctx, device, r) },
+                            shape = RoundedCornerShape(9.dp),
+                        ) {
+                            Text("接收", fontSize = 13.sp, color = AccentDark)
+                        }
+                    }
                 }
             }
         }
@@ -548,6 +587,18 @@ private fun writeClipboard(ctx: Context, text: String) {
 
 private fun toast(ctx: Context, msg: String) {
     Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+}
+
+// 从中转取文件。DownloadManager 支持自定义 header，密钥不用塞进 URL。
+private fun downloadFromRelay(ctx: Context, device: Device, item: RelayItem) {
+    val url = device.relayUrl.trimEnd('/') + "/api/v1/inbox/" + item.code
+    val req = DownloadManager.Request(Uri.parse(url))
+        .setTitle(item.name)
+        .setDescription("来自电脑")
+        .addRequestHeader("X-AirLink-Key", device.relayKey)
+        .setMimeType("application/octet-stream")
+        .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+    ctx.getSystemService(DownloadManager::class.java).enqueue(req)
 }
 
 private fun startDownload(ctx: Context, device: Device, f: FileItem) {

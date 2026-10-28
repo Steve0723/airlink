@@ -224,6 +224,7 @@ func (g *gui) build() error {
 					PushButton{Text: "添加文件", OnClicked: g.pickFiles},
 					PushButton{Text: "打开文件夹", OnClicked: g.openFolder},
 					PushButton{Text: "删除选中", OnClicked: g.deleteSelected},
+					PushButton{Text: "发送到手机", OnClicked: g.sendToPhone},
 					HSpacer{},
 					PushButton{Text: "设置", OnClicked: g.openSettings},
 					PushButton{Text: "刷新", OnClicked: g.refreshFiles},
@@ -470,6 +471,76 @@ func (g *gui) openSettings() {
 	} else {
 		_ = g.clipLbl.SetText("公网兜底已开启，手机请重新扫码")
 	}
+}
+
+// sendToPhone 把选中的文件投递到公网中转，手机打开 App 就能收到。
+// 这条路径只在"手机不在同一 WiFi"时才需要，局域网内直接用手机来拉更快。
+func (g *gui) sendToPhone() {
+	i := g.tv.CurrentIndex()
+	if i < 0 || i >= len(g.model.items) {
+		_ = g.clipLbl.SetText("先在列表里选中一个文件")
+		return
+	}
+	file := g.model.items[i]
+
+	if g.srv.relayURL() == "" {
+		walk.MsgBox(g.mw, "还没配置公网兜底",
+			"「发送到手机」需要中转服务器。\r\n\r\n请先在「设置」里填写中转地址和密钥。",
+			walk.MsgBoxIconWarning)
+		return
+	}
+
+	phones := g.srv.phones()
+	if len(phones) == 0 {
+		walk.MsgBox(g.mw, "还没有配对过的手机",
+			"请先用手机扫一次二维码连接。\r\n\r\n之后手机打开 App 就能收到电脑发来的文件。",
+			walk.MsgBoxIconWarning)
+		return
+	}
+
+	_, path, err := g.srv.store.Find(file.ID)
+	if err != nil {
+		walk.MsgBox(g.mw, "文件不存在", err.Error(), walk.MsgBoxIconError)
+		return
+	}
+
+	phone := phones[0]
+	_ = g.clipLbl.SetText("正在发送到 " + phone.Name + "…")
+
+	go func() {
+		f, openErr := os.Open(path)
+		if openErr != nil {
+			g.mw.Synchronize(func() {
+				_ = g.clipLbl.SetText("发送失败")
+				walk.MsgBox(g.mw, "打开文件失败", openErr.Error(), walk.MsgBoxIconError)
+			})
+			return
+		}
+		info, statErr := f.Stat()
+		if statErr != nil {
+			f.Close()
+			g.mw.Synchronize(func() {
+				_ = g.clipLbl.SetText("发送失败")
+				walk.MsgBox(g.mw, "读取文件失败", statErr.Error(), walk.MsgBoxIconError)
+			})
+			return
+		}
+
+		putErr := g.srv.relayPut(phone.ID, file.Name, info.Size(), f)
+		f.Close()
+
+		g.mw.Synchronize(func() {
+			if putErr != nil {
+				_ = g.clipLbl.SetText("发送失败")
+				walk.MsgBox(g.mw, "发送到手机失败", putErr.Error(), walk.MsgBoxIconError)
+				return
+			}
+			_ = g.clipLbl.SetText("已发送到 " + phone.Name + "，打开 App 即可接收")
+			walk.MsgBox(g.mw, "已发送",
+				file.Name+" 已投递到中转。\r\n\r\n手机打开 AirLink，在「待接收」里点下载即可。",
+				walk.MsgBoxIconInformation)
+		})
+	}()
 }
 
 func (g *gui) openFolder() {

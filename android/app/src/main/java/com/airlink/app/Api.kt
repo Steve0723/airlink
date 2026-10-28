@@ -191,6 +191,40 @@ class Api(private val device: Device) {
         relayClient.newCall(req).execute().use { return it.isSuccessful }
     }
 
+    /** 上报手机身份，电脑才知道该往哪个 ID 投递。失败无所谓，下次连上会重试。 */
+    fun registerPhone(id: String, name: String) {
+        val body = JSONObject().put("id", id).put("name", name).toString().toRequestBody(jsonType)
+        runCatching {
+            client.newCall(builder("/api/v1/phone/register").post(body).build())
+                .execute().use { }
+        }
+    }
+
+    /** 拉取中转上等这台手机接收的文件。没配中转就返回空。 */
+    fun relayInbox(phoneId: String): List<RelayItem> {
+        if (!device.hasRelay) return emptyList()
+        val url = device.relayUrl.trimEnd('/') +
+            "/api/v1/inbox?device=" + URLEncoder.encode(phoneId, "UTF-8")
+        val req = Request.Builder()
+            .url(url)
+            .header("X-AirLink-Key", device.relayKey)
+            .build()
+        return runCatching {
+            client.newCall(req).execute().use { r ->
+                if (!r.isSuccessful) return@use emptyList()
+                val arr = JSONObject(r.body?.string().orEmpty()).optJSONArray("items")
+                    ?: return@use emptyList()
+                (0 until arr.length()).map { i ->
+                    val o = arr.getJSONObject(i)
+                    RelayItem(o.optString("code"), o.optString("name"), o.optLong("size"))
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    fun relayDownloadUrl(code: String): String =
+        device.relayUrl.trimEnd('/') + "/api/v1/inbox/" + code
+
     fun downloadUrl(fileId: String): String =
         "${device.base}/api/v1/files/$fileId?t=${device.token}"
 
