@@ -225,6 +225,7 @@ func (g *gui) build() error {
 					PushButton{Text: "打开文件夹", OnClicked: g.openFolder},
 					PushButton{Text: "删除选中", OnClicked: g.deleteSelected},
 					HSpacer{},
+					PushButton{Text: "设置", OnClicked: g.openSettings},
 					PushButton{Text: "刷新", OnClicked: g.refreshFiles},
 				},
 			},
@@ -316,7 +317,7 @@ func (g *gui) updateHint() {
 	default:
 		hint = fmt.Sprintf("端口 %d · 已收到 %d 个文件", g.srv.port, len(files))
 	}
-	if g.srv.relayURL != "" {
+	if g.srv.relayURL() != "" {
 		hint += " · 公网兜底已开启"
 	}
 	_ = g.hintLbl.SetText(hint)
@@ -403,6 +404,71 @@ func (g *gui) addPaths(paths []string) {
 	g.refreshFiles()
 	if added > 0 {
 		g.hintLbl.SetText(fmt.Sprintf("已添加 %d 个文件", added))
+	}
+}
+
+// openSettings 配置公网兜底。之前只能靠命令行参数，普通用户根本配不了。
+func (g *gui) openSettings() {
+	var dlg *walk.Dialog
+	var urlEdit, keyEdit *walk.LineEdit
+	var okPB, cancelPB *walk.PushButton
+
+	err := Dialog{
+		AssignTo: &dlg,
+		Title:    "设置",
+		Icon:     walk.IconInformation(),
+		MinSize:  Size{Width: 540, Height: 300},
+		Layout:   VBox{},
+		Children: []Widget{
+			Label{Text: "公网兜底：填了之后，手机不在同一 WiFi 时文件会自动走中转服务器。"},
+			Label{Text: "中转地址（例如 https://drop.example.com）"},
+			LineEdit{AssignTo: &urlEdit, Text: g.srv.relayURL()},
+			Label{Text: "上传密钥"},
+			LineEdit{AssignTo: &keyEdit, Text: g.srv.relayKey()},
+			Label{
+				Text: "两项都留空表示不用公网兜底。改完手机需要重新扫一次二维码。",
+				Font: Font{PointSize: 8},
+			},
+			Composite{
+				Layout: HBox{},
+				Children: []Widget{
+					HSpacer{},
+					PushButton{AssignTo: &okPB, Text: "保存", OnClicked: func() { dlg.Accept() }},
+					PushButton{AssignTo: &cancelPB, Text: "取消", OnClicked: func() { dlg.Cancel() }},
+				},
+			},
+		},
+	}.Create(g.mw)
+	if err != nil {
+		walk.MsgBox(g.mw, "打开设置失败", err.Error(), walk.MsgBoxIconError)
+		return
+	}
+	dlg.SetDefaultButton(okPB)
+	dlg.SetCancelButton(cancelPB)
+
+	if dlg.Run() != walk.DlgCmdOK {
+		return
+	}
+
+	url := strings.TrimSpace(urlEdit.Text())
+	key := strings.TrimSpace(keyEdit.Text())
+	if (url == "") != (key == "") {
+		walk.MsgBox(g.mw, "配置不完整",
+			"中转地址和密钥要么都填，要么都留空。", walk.MsgBoxIconWarning)
+		return
+	}
+	if url != "" && !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		walk.MsgBox(g.mw, "地址格式不对",
+			"中转地址要以 http:// 或 https:// 开头。", walk.MsgBoxIconWarning)
+		return
+	}
+
+	g.srv.setRelay(url, key)
+	g.reloadNet()
+	if url == "" {
+		_ = g.clipLbl.SetText("已关闭公网兜底")
+	} else {
+		_ = g.clipLbl.SetText("公网兜底已开启，手机请重新扫码")
 	}
 }
 

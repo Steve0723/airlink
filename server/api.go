@@ -26,8 +26,6 @@ type Server struct {
 	mu         sync.RWMutex // 保护 state.Token / PreferredIP
 	cfg        string       // state.json 路径
 	mobilePage []byte       // /j 页面，给手机浏览器用
-	relayURL   string       // 公网中转服务地址
-	relayKey   string       // 中转服务上传密钥
 
 	// onClip 由窗口注入：手机发来剪贴板时回调，用于自动复制到 Windows 剪贴板。
 	onClip func(ClipItem)
@@ -51,6 +49,27 @@ func (s *Server) rotateToken() string {
 	s.state.Token = randomToken()
 	_ = saveJSON(s.cfg, s.state)
 	return s.state.Token
+}
+
+func (s *Server) relayURL() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.state.RelayURL
+}
+
+func (s *Server) relayKey() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.state.RelayKey
+}
+
+// setRelay 保存中转配置；传空表示关掉公网兜底。
+func (s *Server) setRelay(url, key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.RelayURL = strings.TrimRight(strings.TrimSpace(url), "/")
+	s.state.RelayKey = strings.TrimSpace(key)
+	_ = saveJSON(s.cfg, s.state)
 }
 
 func (s *Server) deviceID() string {
@@ -378,10 +397,10 @@ func (s *Server) qrContent() string {
 	q.Set("t", s.token())
 	q.Set("n", s.deviceName())
 	// 带上中转信息：手机离开局域网后靠它走公网兜底
-	if s.relayURL != "" {
-		q.Set("r", s.relayURL)
+	if s.relayURL() != "" {
+		q.Set("r", s.relayURL())
 		q.Set("d", s.deviceID())
-		q.Set("k", s.relayKey)
+		q.Set("k", s.relayKey())
 	}
 	return base + "/j?" + q.Encode()
 }

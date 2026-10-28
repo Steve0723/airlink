@@ -21,7 +21,7 @@ type relayItem struct {
 }
 
 func (s *Server) relayEndpoint(path string) string {
-	return strings.TrimSuffix(s.relayURL, "/") + path
+	return strings.TrimSuffix(s.relayURL(), "/") + path
 }
 
 func (s *Server) relayList() ([]relayItem, error) {
@@ -30,7 +30,7 @@ func (s *Server) relayList() ([]relayItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("X-AirLink-Key", s.relayKey)
+	req.Header.Set("X-AirLink-Key", s.relayKey())
 
 	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
 	if err != nil {
@@ -57,7 +57,7 @@ func (s *Server) relayFetch(it relayItem) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("X-AirLink-Key", s.relayKey)
+	req.Header.Set("X-AirLink-Key", s.relayKey())
 
 	resp, err := (&http.Client{Timeout: 30 * time.Minute}).Do(req)
 	if err != nil {
@@ -100,7 +100,7 @@ func (s *Server) relayAck(code string) {
 	if err != nil {
 		return
 	}
-	req.Header.Set("X-AirLink-Key", s.relayKey)
+	req.Header.Set("X-AirLink-Key", s.relayKey())
 	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
 	if err == nil {
 		resp.Body.Close()
@@ -108,6 +108,10 @@ func (s *Server) relayAck(code string) {
 }
 
 func (s *Server) pullRelayOnce() {
+	// 没配中转就什么都不做，设置里随时可以打开
+	if s.relayURL() == "" {
+		return
+	}
 	items, err := s.relayList()
 	if err != nil {
 		verbosef("轮询中转失败: %v", err)
@@ -123,11 +127,8 @@ func (s *Server) pullRelayOnce() {
 	}
 }
 
-// startRelayPoller 只在配置了中转服务时启动。3 秒一轮，开销很小。
+// startRelayPoller 常驻运行；没配中转时每轮直接返回，配好后无需重启。
 func (s *Server) startRelayPoller() {
-	if s.relayURL == "" {
-		return
-	}
 	go func() {
 		ticker := time.NewTicker(3 * time.Second)
 		defer ticker.Stop()

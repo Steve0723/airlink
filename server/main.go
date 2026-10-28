@@ -38,7 +38,7 @@ func main() {
 	dataDir := flag.String("data", "", "数据目录（默认 %AppData%\\AirLink）")
 	name := flag.String("name", "", "设备名（默认计算机名）")
 	noGUI := flag.Bool("no-gui", false, "不开窗口，纯命令行运行（调试用）")
-	relayURL := flag.String("relay", "", "公网中转服务地址，如 https://drop.example.com（配置后分享可选上传到公网）")
+	relayURL := flag.String("relay", "", "公网中转服务地址（也可在界面「设置」里填）")
 	relayKey := flag.String("relay-key", "", "中转服务的上传密钥")
 	flag.BoolVar(&verbose, "v", false, "输出详细日志")
 	flag.Parse()
@@ -71,6 +71,12 @@ func main() {
 	if err != nil {
 		fatal("无法读取配置: %v", err)
 	}
+	// 命令行参数只作为首次运行的初始值，之后以界面设置为准
+	if *relayURL != "" && state.RelayURL == "" {
+		state.RelayURL = *relayURL
+		state.RelayKey = *relayKey
+		_ = saveJSON(statePath, state)
+	}
 	store, err := NewStore(dir)
 	if err != nil {
 		fatal("无法初始化存储: %v", err)
@@ -91,8 +97,6 @@ func main() {
 		port:       *port,
 		cfg:        statePath,
 		mobilePage: mobilePage,
-		relayURL:   *relayURL,
-		relayKey:   *relayKey,
 	}
 	handler := srv.routes(http.FileServer(http.FS(sub)))
 

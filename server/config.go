@@ -18,6 +18,8 @@ type State struct {
 	DeviceName  string    `json:"deviceName"`
 	PreferredIP string    `json:"preferredIP,omitempty"`
 	DeviceID    string    `json:"deviceID,omitempty"` // 公网兜底用的设备标识
+	RelayURL    string    `json:"relayURL,omitempty"`
+	RelayKey    string    `json:"relayKey,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
