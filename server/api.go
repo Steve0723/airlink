@@ -407,6 +407,26 @@ func (s *Server) handlePostClip(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "clip": item})
 }
 
+// handleDeleteClip 删掉一条记录。电脑和手机都能调。
+func (s *Server) handleDeleteClip(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if strings.TrimSpace(id) == "" {
+		writeErr(w, http.StatusBadRequest, "缺少记录 ID")
+		return
+	}
+	if !s.store.DeleteClip(id) {
+		writeErr(w, http.StatusNotFound, "记录不存在")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleClearClips 清空全部记录。
+func (s *Server) handleClearClips(w http.ResponseWriter, r *http.Request) {
+	s.store.ClearClips()
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 // handlePushLocalClip 由电脑端窗口调用：读取 Windows 剪贴板后推送。
 func (s *Server) handlePushLocalClip(w http.ResponseWriter, r *http.Request) {
 	var body struct {
@@ -550,6 +570,8 @@ func (s *Server) routes(static http.Handler) http.Handler {
 
 	mux.HandleFunc("GET /api/v1/clipboard", s.requireToken(s.handleGetClips))
 	mux.HandleFunc("POST /api/v1/clipboard", s.requireToken(s.handlePostClip))
+	mux.HandleFunc("DELETE /api/v1/clipboard/{id}", s.requireToken(s.handleDeleteClip))
+	mux.HandleFunc("DELETE /api/v1/clipboard", s.requireToken(s.handleClearClips))
 	mux.HandleFunc("POST /api/console/clipboard", s.loopbackOnly(s.handlePushLocalClip))
 
 	mux.HandleFunc("GET /api/console/state", s.loopbackOnly(s.handleConsoleState))

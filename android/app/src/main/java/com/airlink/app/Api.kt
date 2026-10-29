@@ -139,6 +139,13 @@ class Api(private val device: Device) {
         }
     }
 
+    /** 删掉一条文字记录。 */
+    fun deleteClip(id: String) {
+        client.newCall(builder("/api/v1/clipboard/$id").delete().build()).execute().use { r ->
+            if (!r.isSuccessful) throw ApiException(errorOf(r, "删除记录失败"))
+        }
+    }
+
     fun postClip(content: String) {
         val body = JSONObject()
             .put("content", content)

@@ -142,6 +142,34 @@ check("超大文本被拒", s == 400, s)
 s, j, _ = req("POST", "/api/v1/clipboard", {"content": "   ", "from": "手机"}, AUTH)
 check("空内容被拒", s == 400, s)
 
+# 电脑发的文字必须写进 clips——手机读的是这个列表。
+# 之前 sendText 走的是 texts，导致「发送文字」在手机上永远看不到。
+s, j, _ = req("POST", "/api/console/clipboard", {"content": "电脑发的文字"})
+check("电脑发文字成功", s == 200 and j.get("clip", {}).get("from") == "电脑", j)
+s, j, _ = req("GET", "/api/v1/clipboard", headers=AUTH)
+check(
+    "手机能读到电脑发的文字",
+    any(c["content"] == "电脑发的文字" for c in j.get("clips", [])),
+    [c["content"] for c in j.get("clips", [])],
+)
+
+cid = j["clips"][0]["id"]
+s, j, _ = req("DELETE", f"/api/v1/clipboard/{cid}", headers=AUTH)
+check("删除单条记录", s == 200, j)
+s, j, _ = req("GET", "/api/v1/clipboard", headers=AUTH)
+check("删掉的记录不在了", all(c["id"] != cid for c in j.get("clips", [])), j)
+
+s, j, _ = req("DELETE", "/api/v1/clipboard/nonexistent", headers=AUTH)
+check("删不存在的记录返回 404", s == 404, s)
+
+s, j, _ = req("DELETE", "/api/v1/clipboard", headers=AUTH)
+check("清空记录", s == 200, j)
+s, j, _ = req("GET", "/api/v1/clipboard", headers=AUTH)
+check("清空后列表为空", len(j.get("clips", [])) == 0, j)
+
+s, j, _ = req("DELETE", "/api/v1/clipboard", headers={})
+check("删除需要鉴权", s == 401, s)
+
 print("\n[9] 重复上传去重")
 
 

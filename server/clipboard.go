@@ -58,3 +58,33 @@ func (s *Store) LatestFrom(from string) (ClipItem, bool) {
 	}
 	return ClipItem{}, false
 }
+
+// DeleteClip 删掉一条记录，返回是否真的删到了。
+func (s *Store) DeleteClip(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out := make([]ClipItem, 0, len(s.clips))
+	found := false
+	for _, c := range s.clips {
+		if c.ID == id {
+			found = true
+			continue
+		}
+		out = append(out, c)
+	}
+	if !found {
+		return false
+	}
+	s.clips = out
+	_ = saveJSON(s.clipPath(), s.clips)
+	return true
+}
+
+// ClearClips 清空全部记录。
+func (s *Store) ClearClips() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clips = nil
+	_ = saveJSON(s.clipPath(), s.clips)
+}

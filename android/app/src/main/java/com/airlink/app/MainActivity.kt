@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +43,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -104,7 +106,8 @@ private fun Root() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var device by remember { mutableStateOf(Prefs.load(ctx)) }
+    var devices by remember { mutableStateOf(Prefs.loadAll(ctx)) }
+    var active by remember { mutableStateOf<Device?>(null) }
     var connecting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
 
@@ -117,8 +120,9 @@ private fun Root() {
             val found = withContext(Dispatchers.IO) { connectFromQr(content) }
             connecting = false
             if (found != null) {
-                Prefs.save(ctx, found)
-                device = found
+                Prefs.upsert(ctx, found)
+                devices = Prefs.loadAll(ctx)
+                active = found
             } else {
                 error = "连不上电脑。请确认手机和电脑在同一个 WiFi，且电脑端 AirLink 正在运行。"
             }
@@ -132,99 +136,144 @@ private fun Root() {
         }
     }
 
-    val current = device
+    val startScan = {
+        scanLauncher.launch(
+            ScanOptions().apply {
+                setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                setPrompt("扫描电脑上的二维码")
+                setBeepEnabled(false)
+                setOrientationLocked(true) // 锁竖屏，跟着清单走
+            }
+        )
+    }
+
+    val current = active
     if (current == null) {
-        ConnectScreen(
+        DeviceListScreen(
+            devices = devices,
+            lastKey = Prefs.lastKey(ctx),
             connecting = connecting,
             error = error,
-            onScan = {
-                scanLauncher.launch(
-                    ScanOptions().apply {
-                        setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                        setPrompt("扫描电脑上的二维码")
-                        setBeepEnabled(false)
-                        setOrientationLocked(true) // 锁竖屏，跟着清单走
-                    }
-                )
+            onPick = { active = it },
+            onScan = startScan,
+            onDelete = { d ->
+                Prefs.remove(ctx, d)
+                devices = Prefs.loadAll(ctx)
             },
         )
     } else {
         HomeScreen(
             device = current,
-            onDisconnect = {
-                Prefs.clear(ctx)
-                device = null
-            },
+            // 「返回」只回列表，配对信息保留——以前这里会清掉，等于每次都得重扫
+            onDisconnect = { active = null },
             onDeviceUpdated = { updated ->
-                Prefs.save(ctx, updated)
-                device = updated
+                Prefs.upsert(ctx, updated)
+                devices = Prefs.loadAll(ctx)
+                active = updated
             },
         )
     }
 }
 
+// 打开 App 先看到这里，不再每次都弹扫码。
 @Composable
-private fun ConnectScreen(connecting: Boolean, error: String, onScan: () -> Unit) {
+private fun DeviceListScreen(
+    devices: List<Device>,
+    lastKey: String,
+    connecting: Boolean,
+    error: String,
+    onPick: (Device) -> Unit,
+    onScan: () -> Unit,
+    onDelete: (Device) -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+            .padding(20.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(64.dp)
-                .background(Accent, RoundedCornerShape(18.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("⇄", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
-        }
-        Spacer(Modifier.height(22.dp))
-        Text("AirLink", fontSize = 24.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
+        Text("我的电脑", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Text(
-            "在电脑上打开 AirLink，用手机扫描屏幕上的二维码",
+            if (devices.isEmpty()) "还没有配对过电脑" else "点一台进入，点「移除」可取消配对",
             color = Muted,
-            fontSize = 14.sp,
-            modifier = Modifier.padding(horizontal = 12.dp),
+            fontSize = 12.sp,
         )
-        Spacer(Modifier.height(30.dp))
 
-        Button(
-            onClick = onScan,
-            enabled = !connecting,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(54.dp),
-            shape = RoundedCornerShape(14.dp),
+        Spacer(Modifier.height(16.dp))
+
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            if (connecting) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    color = Color.White,
-                    strokeWidth = 2.dp,
-                )
-                Spacer(Modifier.width(10.dp))
-                Text("正在连接…", fontSize = 16.sp)
-            } else {
-                Text("扫码连接", fontSize = 16.sp)
+            items(devices, key = { Prefs.key(it) }) { d ->
+                Card {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .clickable { onPick(d) }
+                                .padding(vertical = 2.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    d.name.ifBlank { "电脑" },
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                if (Prefs.key(d) == lastKey) {
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("最近", color = AccentDark, fontSize = 10.sp)
+                                }
+                            }
+                            Text("${d.host}:${d.port}", color = Muted, fontSize = 12.sp)
+                            if (d.hasRelay) {
+                                Text("公网兜底已开启", color = Muted, fontSize = 11.sp)
+                            }
+                        }
+                        TextButton(onClick = { onDelete(d) }) {
+                            Text("移除", color = Muted, fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+
+            if (devices.isEmpty()) {
+                item {
+                    Text(
+                        "在电脑上打开 AirLink，用下面的按钮扫它显示的二维码即可配对。",
+                        color = Muted,
+                        fontSize = 13.sp,
+                    )
+                }
             }
         }
 
         if (error.isNotEmpty()) {
-            Spacer(Modifier.height(16.dp))
-            Text(error, color = Color(0xFFC0453F), fontSize = 13.sp)
+            Text(error, color = Color(0xFFC0453F), fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
         }
 
-        Spacer(Modifier.height(26.dp))
-        Text(
-            "不想装 App？直接用手机相机扫二维码，\n浏览器里也能传，只是没有后台续传。",
-            color = Muted,
-            fontSize = 12.sp,
-        )
+        Button(
+            onClick = onScan,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            shape = RoundedCornerShape(12.dp),
+            enabled = !connecting,
+        ) {
+            Text(
+                when {
+                    connecting -> "正在连接…"
+                    devices.isEmpty() -> "扫码配对电脑"
+                    else -> "扫码添加新电脑"
+                },
+                fontSize = 15.sp,
+            )
+        }
+        Spacer(Modifier.height(6.dp))
     }
 }
+
 
 @Composable
 private fun HomeScreen(
@@ -248,6 +297,7 @@ private fun HomeScreen(
     var inbox by remember { mutableStateOf<List<RelayItem>>(emptyList()) }
     var registered by remember { mutableStateOf(false) }
     var refreshKey by remember { mutableStateOf(0) }
+    var showSettings by remember { mutableStateOf(false) }
     var lastDiscover by remember { mutableStateOf(0L) }
 
     // 电脑发来的剪贴板和文件没有推送通道，前台每 4 秒主动拉一次。
@@ -324,6 +374,7 @@ private fun HomeScreen(
         TransferService.start(ctx, device, uris.map { it.toString() })
     }
 
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(14.dp),
@@ -336,9 +387,18 @@ private fun HomeScreen(
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(device.name.ifBlank { "电脑" }, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                    Text("${device.host}:${device.port}", color = Muted, fontSize = 12.sp)
+                    Text(
+                        buildString {
+                            append("${device.host}:${device.port}")
+                            if (device.hasRelay) append(" · 公网兜底已开启")
+                        },
+                        color = Muted,
+                        fontSize = 12.sp,
+                    )
                 }
-                TextButton(onClick = onDisconnect) { Text("断开") }
+                TextButton(onClick = { refreshKey++ }) { Text("刷新", fontSize = 13.sp) }
+                TextButton(onClick = { showSettings = true }) { Text("设置", fontSize = 13.sp) }
+                TextButton(onClick = onDisconnect) { Text("返回", fontSize = 13.sp) }
             }
         }
 
@@ -517,7 +577,16 @@ private fun HomeScreen(
                     TextButton(onClick = {
                         writeClipboard(ctx, c.content)
                         toast(ctx, "已复制到手机剪贴板")
-                    }) { Text("复制", color = AccentDark) }
+                    }) { Text("复制", color = AccentDark, fontSize = 13.sp) }
+                    TextButton(onClick = {
+                        scope.launch {
+                            val ok = withContext(Dispatchers.IO) {
+                                runCatching { Api(device).deleteClip(c.id) }.isSuccess
+                            }
+                            toast(ctx, if (ok) "已删除" else "删除失败")
+                            refreshKey++
+                        }
+                    }) { Text("删", color = Muted, fontSize = 13.sp) }
                 }
             }
         }
@@ -532,6 +601,80 @@ private fun HomeScreen(
             )
         }
     }
+
+    if (showSettings) {
+        RelaySettingsDialog(
+            device = device,
+            onDismiss = { showSettings = false },
+            onSave = { url, key ->
+                onDeviceUpdated(device.copy(relayUrl = url, relayKey = key))
+                showSettings = false
+            },
+        )
+    }
+    }
+}
+
+// 中转配置。以前只能在电脑上改、再重新扫码，手机上完全看不到状态。
+@Composable
+private fun RelaySettingsDialog(
+    device: Device,
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit,
+) {
+    var url by remember { mutableStateOf(device.relayUrl) }
+    var key by remember { mutableStateOf(device.relayKey) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("公网中转", fontSize = 16.sp) },
+        text = {
+            Column {
+                Text(
+                    "手机离开同一个 WiFi 时，文件通过中转服务器发给电脑。两项都留空表示不用。",
+                    color = Muted,
+                    fontSize = 12.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text("中转地址") },
+                    placeholder = { Text("https://drop.example.com", fontSize = 12.sp) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = key,
+                    onValueChange = { key = it },
+                    label = { Text("上传密钥") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "设备 ID：${device.deviceId.ifBlank { "未获取，请重新扫码" }}",
+                    color = Muted,
+                    fontSize = 11.sp,
+                )
+                if (device.deviceId.isBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "设备 ID 由电脑生成，只能通过扫码获取。只填地址和密钥，兜底仍然用不了。",
+                        color = Color(0xFFC0453F),
+                        fontSize = 11.sp,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(url.trim(), key.trim()) }) { Text("保存") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
 }
 
 @Composable

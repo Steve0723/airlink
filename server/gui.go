@@ -69,6 +69,8 @@ type gui struct {
 	autoBox  *walk.CheckBox
 	clipLbl  *walk.Label
 	textEdit *walk.LineEdit
+	recList  *walk.ListBox
+	recItems []ClipItem // 与 recList 的行一一对应，双击时用来取原文
 	autoCopy bool
 
 	srv     *Server
@@ -85,6 +87,7 @@ func runGUI(s *Server) {
 	// 手机发来剪贴板时，直接写进 Windows 剪贴板——复制粘贴这个动作不该再点一次。
 	s.onClip = func(item ClipItem) {
 		g.mw.Synchronize(func() {
+			g.refreshClips()
 			if g.autoCopy {
 				if err := walk.Clipboard().SetText(item.Content); err == nil {
 					_ = g.clipLbl.SetText("已复制到剪贴板：" + clipPreview(item.Content))
@@ -106,9 +109,12 @@ func (g *gui) sendText() {
 		_ = g.clipLbl.SetText("输入框是空的")
 		return
 	}
-	g.srv.store.AddText(text, "电脑")
+	// 必须写进 clips——手机读的是 /api/v1/clipboard。
+	// 之前写 AddText 进了 texts 列表，而手机从不读那个列表，所以「发送文字」一直收不到。
+	g.srv.store.AddClip(text, "电脑")
 	_ = g.textEdit.SetText("")
 	_ = g.clipLbl.SetText("已发送文字：" + clipPreview(text))
+	g.refreshClips()
 }
 
 func (g *gui) toggleAutoCopy() {
@@ -124,6 +130,7 @@ func (g *gui) sendClipboard() {
 	}
 	g.srv.store.AddClip(text, "电脑")
 	_ = g.clipLbl.SetText("已发送：" + clipPreview(text))
+	g.refreshClips()
 }
 
 func clipPreview(s string) string {
@@ -139,8 +146,8 @@ func (g *gui) build() error {
 	if err := (MainWindow{
 		AssignTo:    &g.mw,
 		Title:       "AirLink · 手机电脑互传",
-		Size:        Size{Width: 800, Height: 640},
-		MinSize:     Size{Width: 700, Height: 540},
+		Size:        Size{Width: 800, Height: 720},
+		MinSize:     Size{Width: 700, Height: 620},
 		Layout:      VBox{},
 		OnDropFiles: g.addPaths,
 		Children: []Widget{
@@ -208,6 +215,30 @@ func (g *gui) build() error {
 					PushButton{Text: "发送文字", OnClicked: g.sendText},
 				},
 			},
+			Composite{
+				Layout: VBox{MarginsZero: true},
+				Children: []Widget{
+					Composite{
+						Layout: HBox{MarginsZero: true},
+						Children: []Widget{
+							Label{
+								Text: "最近记录（电脑 ↔ 手机，双击可复制）",
+								Font: Font{PointSize: 9, Bold: true},
+							},
+							HSpacer{},
+							PushButton{Text: "删除选中", OnClicked: g.deleteSelectedClip},
+							PushButton{Text: "清空", OnClicked: g.clearClips},
+						},
+					},
+					ListBox{
+						AssignTo:        &g.recList,
+						Model:           []string{},
+						MaxSize:         Size{Height: 96},
+						StretchFactor:   1,
+						OnItemActivated: g.copySelectedClip,
+					},
+				},
+			},
 			TableView{
 				AssignTo: &g.tv,
 				Model:    g.model,
@@ -227,7 +258,7 @@ func (g *gui) build() error {
 					PushButton{Text: "发送到手机", OnClicked: g.sendToPhone},
 					HSpacer{},
 					PushButton{Text: "设置", OnClicked: g.openSettings},
-					PushButton{Text: "刷新", OnClicked: g.refreshFiles},
+					PushButton{Text: "刷新", OnClicked: g.refreshAll},
 				},
 			},
 		},
@@ -241,6 +272,7 @@ func (g *gui) build() error {
 
 	g.reloadNet()
 	g.refreshFiles()
+	g.refreshClips()
 	return nil
 }
 
@@ -330,26 +362,120 @@ func (g *gui) refreshFiles() {
 	g.updateHint()
 }
 
+// refreshClips 重建「最近记录」列表。电脑和手机发的都在这一个列表里，
+// 因为两边读写的是同一份 clips 存储。
+func (g *gui) refreshClips() {
+	items := g.srv.store.Clips()
+	if len(items) > 30 {
+		items = items[:30]
+	}
+	g.recItems = items
+
+	labels := make([]string, len(items))
+	for i, c := range items {
+		arrow := "→"
+		if c.From == "手机" {
+			arrow = "←"
+		}
+		labels[i] = fmt.Sprintf("%s %s  %s  %s",
+			arrow, c.From, clipPreview(c.Content), c.At.Format("01-02 15:04"))
+	}
+	if len(labels) == 0 {
+		labels = []string{"（还没有记录，发一条文字试试）"}
+	}
+	_ = g.recList.SetModel(labels)
+}
+
+// copySelectedClip 双击记录时把原文放回系统剪贴板。
+func (g *gui) copySelectedClip() {
+	i := g.recList.CurrentIndex()
+	if i < 0 || i >= len(g.recItems) {
+		return
+	}
+	item := g.recItems[i]
+	if err := walk.Clipboard().SetText(item.Content); err != nil {
+		_ = g.clipLbl.SetText("复制失败：" + err.Error())
+		return
+	}
+	_ = g.clipLbl.SetText("已复制记录：" + clipPreview(item.Content))
+}
+
+// refreshAll 是界面上那个「刷新」按钮：文件列表和文字记录一起刷。
+func (g *gui) refreshAll() {
+	g.refreshFiles()
+	g.refreshClips()
+	_ = g.clipLbl.SetText("已刷新")
+}
+
+// deleteSelectedClip 删掉记录里选中的那一条。
+func (g *gui) deleteSelectedClip() {
+	i := g.recList.CurrentIndex()
+	if i < 0 || i >= len(g.recItems) {
+		_ = g.clipLbl.SetText("先在记录里选中一条")
+		return
+	}
+	if !g.srv.store.DeleteClip(g.recItems[i].ID) {
+		_ = g.clipLbl.SetText("这条记录已经不在了")
+		g.refreshClips()
+		return
+	}
+	g.refreshClips()
+	_ = g.clipLbl.SetText("已删除一条记录")
+}
+
+// clearClips 清空全部记录。不可撤销，所以先确认。
+func (g *gui) clearClips() {
+	if len(g.recItems) == 0 {
+		_ = g.clipLbl.SetText("记录已经是空的")
+		return
+	}
+	if walk.MsgBox(g.mw, "清空记录",
+		"确定清空全部文字记录吗？这个操作不能撤销。",
+		walk.MsgBoxYesNo|walk.MsgBoxIconQuestion) != walk.DlgCmdYes {
+		return
+	}
+	g.srv.store.ClearClips()
+	g.refreshClips()
+	_ = g.clipLbl.SetText("记录已清空")
+}
+
 // startWatcher 每 2 秒比对一次文件列表，手机传完文件后窗口自动更新。
 func (g *gui) startWatcher() {
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
-		last := ""
+		lastFiles := ""
+		lastClips := ""
 		for range ticker.C {
 			files := g.srv.store.Files()
-			sig := fmt.Sprint(len(files))
+			fileSig := fmt.Sprint(len(files))
 			for _, f := range files {
-				sig += f.ID
+				fileSig += f.ID
 			}
-			if sig == last {
+
+			// 手机那边发来、删掉记录时，窗口也要跟着更新。
+			clips := g.srv.store.Clips()
+			clipSig := fmt.Sprint(len(clips))
+			if len(clips) > 0 {
+				clipSig += clips[0].ID
+			}
+
+			filesChanged := fileSig != lastFiles
+			clipsChanged := clipSig != lastClips
+			if !filesChanged && !clipsChanged {
 				continue
 			}
-			last = sig
+			lastFiles, lastClips = fileSig, clipSig
+
 			snapshot := files
 			g.mw.Synchronize(func() {
-				g.model.set(snapshot)
-				g.updateHint()
+				if filesChanged {
+					g.model.set(snapshot)
+					g.updateHint()
+				}
+				if clipsChanged {
+					g.refreshClips()
+				}
 			})
 		}
 	}()
