@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"embed"
 	"fmt"
+	"image"
 	"image/png"
 	"os"
 	"os/exec"
@@ -56,21 +58,58 @@ func humanSize(n int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
+//go:embed assets/*.png
+var uiAssets embed.FS
+
+// assetPath 把内置图标写到数据目录再返回路径。
+// Walk 的按钮只能按文件路径加载图片，所以必须先落盘一次。
+func (g *gui) assetPath(name string) string {
+	dst := filepath.Join(filepath.Dir(g.srv.cfg), name)
+	data, err := uiAssets.ReadFile("assets/" + name)
+	if err != nil {
+		return ""
+	}
+	// 内容一致就不动文件；不一致才覆盖，否则升级后还会显示上一版的图标。
+	if cur, err := os.ReadFile(dst); err == nil && bytes.Equal(cur, data) {
+		return dst
+	}
+	_ = os.WriteFile(dst, data, 0o644)
+	return dst
+}
+
+// loadIcon 把内置图标加载成 Bitmap 交给按钮。
+// 不能直接把路径传给 Image 字段——Walk 会把它拼到工作目录后面，
+// 绝对路径拼完就成了非法路径，启动时报"找不到图片"。
+func (g *gui) loadIcon(name string) *walk.Bitmap {
+	if p := g.assetPath(name); p != "" {
+		if bmp, err := walk.NewBitmapFromFile(p); err == nil {
+			return bmp
+		}
+	}
+	// 兜底：1×1 透明图。图标加载失败也不该让整个窗口起不来。
+	bmp, _ := walk.NewBitmapFromImage(image.NewRGBA(image.Rect(0, 0, 1, 1)))
+	return bmp
+}
+
+// 界面统一的字号与颜色。主窗口和各个对话框共用一套。
+var (
+	uiTitle = Font{Family: "Microsoft YaHei UI", PointSize: 16, Bold: true}
+	uiBody  = Font{Family: "Microsoft YaHei UI", PointSize: 10}
+	uiSect  = Font{Family: "Microsoft YaHei UI", PointSize: 10, Bold: true}
+	uiHint  = Font{Family: "Microsoft YaHei UI", PointSize: 9}
+	uiMuted = walk.RGB(0x6B, 0x72, 0x80)
+	uiDark  = walk.RGB(0x37, 0x41, 0x51)
+)
+
 type gui struct {
 	mw      *walk.MainWindow
 	qrView  *walk.ImageView
 	devLbl  *walk.Label
-	tokLbl  *walk.Label
-	netBox  *walk.ComboBox
 	hintLbl *walk.Label
 	tv      *walk.TableView
 	model   *fileModel
 
-	autoBox  *walk.CheckBox
-	clipLbl  *walk.Label
-	textEdit *walk.LineEdit
-	recList  *walk.ListBox
-	recItems []ClipItem // 与 recList 的行一一对应，双击时用来取原文
+	// 手机发来的文字是否自动写进 Windows 剪贴板。开关在「文字」面板里。
 	autoCopy bool
 
 	srv     *Server
@@ -87,14 +126,13 @@ func runGUI(s *Server) {
 	// 手机发来剪贴板时，直接写进 Windows 剪贴板——复制粘贴这个动作不该再点一次。
 	s.onClip = func(item ClipItem) {
 		g.mw.Synchronize(func() {
-			g.refreshClips()
 			if g.autoCopy {
 				if err := walk.Clipboard().SetText(item.Content); err == nil {
-					_ = g.clipLbl.SetText("已复制到剪贴板：" + clipPreview(item.Content))
+					_ = g.hintLbl.SetText("已复制到剪贴板：" + clipPreview(item.Content))
 					return
 				}
 			}
-			_ = g.clipLbl.SetText("手机：" + clipPreview(item.Content))
+			_ = g.hintLbl.SetText("手机：" + clipPreview(item.Content))
 		})
 	}
 
@@ -102,37 +140,7 @@ func runGUI(s *Server) {
 	g.mw.Run()
 }
 
-// sendText 手动发一段文字给手机，手机端在剪贴板列表里点「复制」即可。
-func (g *gui) sendText() {
-	text := strings.TrimSpace(g.textEdit.Text())
-	if text == "" {
-		_ = g.clipLbl.SetText("输入框是空的")
-		return
-	}
-	// 必须写进 clips——手机读的是 /api/v1/clipboard。
-	// 之前写 AddText 进了 texts 列表，而手机从不读那个列表，所以「发送文字」一直收不到。
-	g.srv.store.AddClip(text, "电脑")
-	_ = g.textEdit.SetText("")
-	_ = g.clipLbl.SetText("已发送文字：" + clipPreview(text))
-	g.refreshClips()
-}
-
-func (g *gui) toggleAutoCopy() {
-	g.autoCopy = g.autoBox.Checked()
-}
-
-// sendClipboard 把 Windows 剪贴板里的文本推到服务端，手机端点一下就能拿走。
-func (g *gui) sendClipboard() {
-	text, err := walk.Clipboard().Text()
-	if err != nil || strings.TrimSpace(text) == "" {
-		_ = g.clipLbl.SetText("剪贴板里没有文本")
-		return
-	}
-	g.srv.store.AddClip(text, "电脑")
-	_ = g.clipLbl.SetText("已发送：" + clipPreview(text))
-	g.refreshClips()
-}
-
+// clipPreview 把多行文本压成一行短预览，列表里显示用。
 func clipPreview(s string) string {
 	s = strings.ReplaceAll(strings.ReplaceAll(s, "\r", " "), "\n", " ")
 	r := []rune(s)
@@ -142,129 +150,120 @@ func clipPreview(s string) string {
 	return s
 }
 
+// pushText 把一段文字存进记录，手机下次刷新就能看到。
+func (g *gui) pushText(text string) bool {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return false
+	}
+	g.srv.store.AddClip(text, "电脑")
+	return true
+}
+
+// pushClipboard 把 Windows 剪贴板里的文本推过去。
+func (g *gui) pushClipboard() (string, bool) {
+	text, err := walk.Clipboard().Text()
+	if err != nil || strings.TrimSpace(text) == "" {
+		return "", false
+	}
+	g.srv.store.AddClip(text, "电脑")
+	return text, true
+}
+
 func (g *gui) build() error {
+	white := SolidColorBrush{Color: walk.RGB(0xFF, 0xFF, 0xFF)}
+	pageBg, err := walk.NewSolidColorBrush(walk.RGB(0xF4, 0xF5, 0xF7))
+	if err != nil {
+		return err
+	}
+
+	card := func(children ...Widget) Widget {
+		return Composite{
+			Layout:     VBox{Margins: Margins{Left: 18, Top: 16, Right: 18, Bottom: 16}, Spacing: 10},
+			Background: white,
+			Children:   children,
+		}
+	}
+
 	if err := (MainWindow{
 		AssignTo:    &g.mw,
-		Title:       "AirLink · 手机电脑互传",
-		Size:        Size{Width: 800, Height: 720},
-		MinSize:     Size{Width: 700, Height: 620},
-		Layout:      VBox{},
+		Title:       "AirLink",
+		Size:        Size{Width: 880, Height: 680},
+		MinSize:     Size{Width: 720, Height: 560},
+		Layout:      VBox{Margins: Margins{Left: 14, Top: 14, Right: 14, Bottom: 14}, Spacing: 16},
 		OnDropFiles: g.addPaths,
 		Children: []Widget{
-			Composite{
-				Layout: HBox{MarginsZero: true},
-				Children: []Widget{
-					ImageView{
-						AssignTo: &g.qrView,
-						MinSize:  Size{Width: 220, Height: 220},
-						MaxSize:  Size{Width: 220, Height: 220},
-					},
-					Composite{
-						Layout: VBox{},
-						Children: []Widget{
-							Label{
-								Text: "手机扫码配对",
-								Font: Font{PointSize: 15, Bold: true},
-							},
-							Label{AssignTo: &g.devLbl, Text: ""},
-							Composite{
-								Layout: HBox{MarginsZero: true},
-								Children: []Widget{
-									Label{Text: "配对码"},
-									Label{AssignTo: &g.tokLbl, Text: "", MinSize: Size{Width: 150}, Font: Font{Family: "Consolas", PointSize: 11, Bold: true}},
-									HSpacer{},
-									PushButton{Text: "复制", OnClicked: g.copyToken},
-									PushButton{Text: "重置", OnClicked: g.rotateToken},
-								},
-							},
-							Composite{
-								Layout: HBox{MarginsZero: true},
-								Children: []Widget{
-									Label{Text: "网络地址"},
-									ComboBox{
-										AssignTo:              &g.netBox,
-										Model:                 []string{},
-										OnCurrentIndexChanged: g.onPickIP,
+			// 顶部：二维码 + 状态 + 两个入口。文字互传和配对细节都收进对话框。
+			card(
+				Composite{
+					Layout: HBox{MarginsZero: true, Spacing: 28},
+					Children: []Widget{
+						ImageView{
+							AssignTo: &g.qrView,
+							MinSize:  Size{Width: 156, Height: 156},
+							MaxSize:  Size{Width: 156, Height: 156},
+						},
+						Composite{
+							Layout: VBox{MarginsZero: true, Spacing: 6},
+							Children: []Widget{
+								Label{Text: "AirLink", Font: uiTitle},
+								Label{AssignTo: &g.devLbl, Text: "", Font: uiBody, TextColor: uiMuted},
+								Label{AssignTo: &g.hintLbl, Text: "", Font: uiHint, TextColor: uiMuted},
+								Composite{
+									Layout: HBox{MarginsZero: true, Spacing: 8},
+									Children: []Widget{
+										PushButton{Text: "文字", Image: g.loadIcon("ui-text.png"), MinSize: Size{Width: 110, Height: 36}, OnClicked: g.openTextPanel},
+										PushButton{Text: "设置", Image: g.loadIcon("ui-settings.png"), MinSize: Size{Width: 110, Height: 36}, OnClicked: g.openSettings},
+										HSpacer{},
 									},
-									PushButton{Text: "重新检测", OnClicked: g.reloadNet},
 								},
 							},
-							Label{AssignTo: &g.hintLbl, Text: ""},
 						},
+						HSpacer{},
 					},
 				},
-			},
-			Composite{
-				Layout: HBox{MarginsZero: true},
-				Children: []Widget{
-					PushButton{Text: "发送剪贴板", OnClicked: g.sendClipboard},
-					CheckBox{
-						AssignTo:         &g.autoBox,
-						Text:             "自动复制手机发来的文字",
-						Checked:          true,
-						OnCheckedChanged: g.toggleAutoCopy,
+			),
+			// 主体：文件列表占满剩余空间
+			card(
+				Label{Text: "收到的文件", Font: uiSect, TextColor: uiDark},
+				TableView{
+					AssignTo:         &g.tv,
+					Model:            g.model,
+					Font:             uiBody,
+					AlternatingRowBG: true,
+					CustomRowHeight:  28,
+					ContextMenuItems: []MenuItem{
+						Action{Text: "打开", OnTriggered: g.openSelected},
+						Action{Text: "复制文件名", OnTriggered: g.copySelectedName},
+						Action{Text: "在文件夹中显示", OnTriggered: g.revealSelected},
+						Separator{},
+						Action{Text: "删除", OnTriggered: g.deleteSelected},
 					},
-					HSpacer{},
-					Label{AssignTo: &g.clipLbl, Text: ""},
-				},
-			},
-			Composite{
-				Layout: HBox{MarginsZero: true},
-				Children: []Widget{
-					LineEdit{AssignTo: &g.textEdit, StretchFactor: 1},
-					PushButton{Text: "发送文字", OnClicked: g.sendText},
-				},
-			},
-			Composite{
-				Layout: VBox{MarginsZero: true},
-				Children: []Widget{
-					Composite{
-						Layout: HBox{MarginsZero: true},
-						Children: []Widget{
-							Label{
-								Text: "最近记录（电脑 ↔ 手机，双击可复制）",
-								Font: Font{PointSize: 9, Bold: true},
-							},
-							HSpacer{},
-							PushButton{Text: "删除选中", OnClicked: g.deleteSelectedClip},
-							PushButton{Text: "清空", OnClicked: g.clearClips},
-						},
+					Columns: []TableViewColumn{
+						{Title: "文件名", Width: 420},
+						{Title: "大小", Width: 110},
+						{Title: "接收时间", Width: 140},
 					},
-					ListBox{
-						AssignTo:        &g.recList,
-						Model:           []string{},
-						MaxSize:         Size{Height: 96},
-						StretchFactor:   1,
-						OnItemActivated: g.copySelectedClip,
+					StretchFactor: 1,
+				},
+				Composite{
+					Layout: HBox{MarginsZero: true, Spacing: 8},
+					Children: []Widget{
+						PushButton{Text: "添加文件", Image: g.loadIcon("ui-add.png"), MinSize: Size{Width: 124, Height: 34}, OnClicked: g.pickFiles},
+						PushButton{Text: "删除选中", Image: g.loadIcon("ui-delete.png"), MinSize: Size{Width: 124, Height: 34}, OnClicked: g.deleteSelected},
+						PushButton{Text: "发送到手机", Image: g.loadIcon("ui-send.png"), MinSize: Size{Width: 124, Height: 34}, OnClicked: g.sendToPhone},
+						HSpacer{},
+						PushButton{Text: "刷新", Image: g.loadIcon("ui-refresh.png"), MinSize: Size{Width: 100, Height: 34}, OnClicked: g.refreshFiles},
+						PushButton{Text: "打开文件夹", Image: g.loadIcon("ui-folder.png"), MinSize: Size{Width: 124, Height: 34}, OnClicked: g.openFolder},
 					},
 				},
-			},
-			TableView{
-				AssignTo: &g.tv,
-				Model:    g.model,
-				Columns: []TableViewColumn{
-					{Title: "文件名", Width: 420},
-					{Title: "大小", Width: 100},
-					{Title: "接收时间", Width: 130},
-				},
-				StretchFactor: 1,
-			},
-			Composite{
-				Layout: HBox{MarginsZero: true},
-				Children: []Widget{
-					PushButton{Text: "添加文件", OnClicked: g.pickFiles},
-					PushButton{Text: "打开文件夹", OnClicked: g.openFolder},
-					PushButton{Text: "删除选中", OnClicked: g.deleteSelected},
-					PushButton{Text: "发送到手机", OnClicked: g.sendToPhone},
-					HSpacer{},
-					PushButton{Text: "设置", OnClicked: g.openSettings},
-					PushButton{Text: "刷新", OnClicked: g.refreshAll},
-				},
-			},
+			),
 		},
 	}).Create(); err != nil {
 		return err
 	}
+
+	g.mw.SetBackground(pageBg)
 
 	if ic, err := walk.NewIconFromFile(filepath.Join(filepath.Dir(g.srv.cfg), "icon.ico")); err == nil {
 		g.mw.SetIcon(ic)
@@ -272,7 +271,6 @@ func (g *gui) build() error {
 
 	g.reloadNet()
 	g.refreshFiles()
-	g.refreshClips()
 	return nil
 }
 
@@ -282,45 +280,20 @@ func (g *gui) reloadNet() {
 	defer func() { g.loading = false }()
 
 	g.eps = Candidates(g.srv.port)
-	labels := make([]string, 0, len(g.eps))
-	for _, e := range g.eps {
-		labels = append(labels, fmt.Sprintf("%s  ·  %s", e.Addr(), e.Iface))
-	}
-	if len(labels) == 0 {
-		labels = []string{"未找到可用网络"}
-	}
-	g.netBox.SetModel(labels)
-
-	idx := 0
-	pref := g.srv.preferredIP()
-	for i, e := range g.eps {
-		if e.IP == pref {
-			idx = i
-			break
-		}
-	}
-	if len(g.eps) > 0 {
-		g.netBox.SetCurrentIndex(idx)
-	}
-
-	g.devLbl.SetText("设备：" + g.srv.deviceName())
-	g.tokLbl.SetText(g.srv.token()[:8])
+	_ = g.devLbl.SetText("设备：" + g.srv.deviceName())
 	g.updateQR()
 	g.updateHint()
 }
 
-func (g *gui) onPickIP() {
-	if g.loading {
-		return
-	}
-	i := g.netBox.CurrentIndex()
-	if i < 0 || i >= len(g.eps) {
-		return
-	}
-	g.srv.setPreferredIP(g.eps[i].IP)
+// setNetwork 手动指定对外地址。多网卡机器（装过虚拟机、VPN、组网工具）
+// 靠这个避开自动挑错网卡的问题。
+func (g *gui) setNetwork(ip string) {
+	g.srv.setPreferredIP(ip)
 	g.updateQR()
 	g.updateHint()
 }
+
+
 
 func (g *gui) updateQR() {
 	pngBytes, err := qrcode.Encode(g.srv.qrContent(), qrcode.Medium, 220)
@@ -364,13 +337,8 @@ func (g *gui) refreshFiles() {
 
 // refreshClips 重建「最近记录」列表。电脑和手机发的都在这一个列表里，
 // 因为两边读写的是同一份 clips 存储。
-func (g *gui) refreshClips() {
-	items := g.srv.store.Clips()
-	if len(items) > 30 {
-		items = items[:30]
-	}
-	g.recItems = items
-
+// clipLabels 把记录格式化成列表行，供「文字」面板显示。
+func clipLabels(items []ClipItem) []string {
 	labels := make([]string, len(items))
 	for i, c := range items {
 		arrow := "→"
@@ -381,101 +349,32 @@ func (g *gui) refreshClips() {
 			arrow, c.From, clipPreview(c.Content), c.At.Format("01-02 15:04"))
 	}
 	if len(labels) == 0 {
-		labels = []string{"（还没有记录，发一条文字试试）"}
+		labels = []string{"（还没有记录）"}
 	}
-	_ = g.recList.SetModel(labels)
+	return labels
 }
 
-// copySelectedClip 双击记录时把原文放回系统剪贴板。
-func (g *gui) copySelectedClip() {
-	i := g.recList.CurrentIndex()
-	if i < 0 || i >= len(g.recItems) {
-		return
-	}
-	item := g.recItems[i]
-	if err := walk.Clipboard().SetText(item.Content); err != nil {
-		_ = g.clipLbl.SetText("复制失败：" + err.Error())
-		return
-	}
-	_ = g.clipLbl.SetText("已复制记录：" + clipPreview(item.Content))
-}
-
-// refreshAll 是界面上那个「刷新」按钮：文件列表和文字记录一起刷。
-func (g *gui) refreshAll() {
-	g.refreshFiles()
-	g.refreshClips()
-	_ = g.clipLbl.SetText("已刷新")
-}
-
-// deleteSelectedClip 删掉记录里选中的那一条。
-func (g *gui) deleteSelectedClip() {
-	i := g.recList.CurrentIndex()
-	if i < 0 || i >= len(g.recItems) {
-		_ = g.clipLbl.SetText("先在记录里选中一条")
-		return
-	}
-	if !g.srv.store.DeleteClip(g.recItems[i].ID) {
-		_ = g.clipLbl.SetText("这条记录已经不在了")
-		g.refreshClips()
-		return
-	}
-	g.refreshClips()
-	_ = g.clipLbl.SetText("已删除一条记录")
-}
-
-// clearClips 清空全部记录。不可撤销，所以先确认。
-func (g *gui) clearClips() {
-	if len(g.recItems) == 0 {
-		_ = g.clipLbl.SetText("记录已经是空的")
-		return
-	}
-	if walk.MsgBox(g.mw, "清空记录",
-		"确定清空全部文字记录吗？这个操作不能撤销。",
-		walk.MsgBoxYesNo|walk.MsgBoxIconQuestion) != walk.DlgCmdYes {
-		return
-	}
-	g.srv.store.ClearClips()
-	g.refreshClips()
-	_ = g.clipLbl.SetText("记录已清空")
-}
 
 // startWatcher 每 2 秒比对一次文件列表，手机传完文件后窗口自动更新。
 func (g *gui) startWatcher() {
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
-		lastFiles := ""
-		lastClips := ""
+		last := ""
 		for range ticker.C {
 			files := g.srv.store.Files()
-			fileSig := fmt.Sprint(len(files))
+			sig := fmt.Sprint(len(files))
 			for _, f := range files {
-				fileSig += f.ID
+				sig += f.ID
 			}
-
-			// 手机那边发来、删掉记录时，窗口也要跟着更新。
-			clips := g.srv.store.Clips()
-			clipSig := fmt.Sprint(len(clips))
-			if len(clips) > 0 {
-				clipSig += clips[0].ID
-			}
-
-			filesChanged := fileSig != lastFiles
-			clipsChanged := clipSig != lastClips
-			if !filesChanged && !clipsChanged {
+			if sig == last {
 				continue
 			}
-			lastFiles, lastClips = fileSig, clipSig
-
+			last = sig
 			snapshot := files
 			g.mw.Synchronize(func() {
-				if filesChanged {
-					g.model.set(snapshot)
-					g.updateHint()
-				}
-				if clipsChanged {
-					g.refreshClips()
-				}
+				g.model.set(snapshot)
+				g.updateHint()
 			})
 		}
 	}()
@@ -483,19 +382,67 @@ func (g *gui) startWatcher() {
 
 func (g *gui) copyToken() {
 	_ = walk.Clipboard().SetText(g.srv.token())
-	g.hintLbl.SetText("配对码已复制到剪贴板")
+	_ = g.hintLbl.SetText("配对码已复制到剪贴板")
 }
 
-func (g *gui) rotateToken() {
+// rotateToken 重置配对码，返回新码前 8 位（给设置对话框显示用）。
+func (g *gui) rotateToken() string {
 	if walk.MsgBox(g.mw, "重置配对码",
 		"重新生成后，已配对的手机需要重新扫码。继续？",
 		walk.MsgBoxIconQuestion|walk.MsgBoxYesNo) != walk.DlgCmdYes {
+		return ""
+	}
+	tok := g.srv.rotateToken()
+	g.updateQR()
+	_ = g.hintLbl.SetText("配对码已重置")
+	return tok
+}
+
+// selectedFile 返回列表里当前选中的文件及其磁盘路径。
+func (g *gui) selectedFile() (FileEntry, string, bool) {
+	i := g.tv.CurrentIndex()
+	if i < 0 || i >= len(g.model.items) {
+		return FileEntry{}, "", false
+	}
+	f := g.model.items[i]
+	_, p, err := g.srv.store.Find(f.ID)
+	if err != nil {
+		return FileEntry{}, "", false
+	}
+	return f, p, true
+}
+
+// openSelected 用系统默认程序打开选中的文件。
+func (g *gui) openSelected() {
+	_, p, ok := g.selectedFile()
+	if !ok {
+		_ = g.hintLbl.SetText("先选中一个文件")
 		return
 	}
-	g.srv.rotateToken()
-	g.tokLbl.SetText(g.srv.token()[:8])
-	g.updateQR()
-	g.hintLbl.SetText("配对码已重置")
+	if err := exec.Command("explorer", p).Start(); err != nil {
+		_ = g.hintLbl.SetText("打开失败：" + err.Error())
+	}
+}
+
+// copySelectedName 复制文件名（不是完整路径，文件名才是常被粘贴的）。
+func (g *gui) copySelectedName() {
+	f, _, ok := g.selectedFile()
+	if !ok {
+		_ = g.hintLbl.SetText("先选中一个文件")
+		return
+	}
+	_ = walk.Clipboard().SetText(f.Name)
+	_ = g.hintLbl.SetText("已复制文件名：" + f.Name)
+}
+
+// revealSelected 在资源管理器里定位到该文件。
+func (g *gui) revealSelected() {
+	_, p, ok := g.selectedFile()
+	if !ok {
+		_ = g.hintLbl.SetText("先选中一个文件")
+		return
+	}
+	_ = exec.Command("explorer", "/select,"+p).Start()
 }
 
 func (g *gui) pickFiles() {
@@ -535,62 +482,304 @@ func (g *gui) addPaths(paths []string) {
 }
 
 // openSettings 配置公网兜底。之前只能靠命令行参数，普通用户根本配不了。
+// openTextPanel 文字互传面板：发剪贴板、手动输入、查看和删除记录。
+// 这些是低频操作，放在主窗口里会把界面挤满，收进面板更清爽。
+func (g *gui) openTextPanel() {
+	var dlg *walk.Dialog
+	var input *walk.LineEdit
+	var list *walk.ListBox
+	var status *walk.Label
+	var autoBox *walk.CheckBox
+	var closePB *walk.PushButton
+
+	var items []ClipItem
+	rebuild := func() {
+		items = g.srv.store.Clips()
+		if len(items) > 30 {
+			items = items[:30]
+		}
+		_ = list.SetModel(clipLabels(items))
+	}
+
+	err := Dialog{
+		AssignTo: &dlg,
+		Title:    "文字互传",
+		Icon:     walk.IconInformation(),
+		MinSize:  Size{Width: 580, Height: 500},
+		Layout:   VBox{Margins: Margins{Left: 20, Top: 16, Right: 20, Bottom: 16}, Spacing: 10},
+		Children: []Widget{
+			Composite{
+				Layout: HBox{MarginsZero: true},
+				Children: []Widget{
+					PushButton{
+						Text:    "发送剪贴板",
+						MinSize: Size{Width: 118, Height: 32},
+						OnClicked: func() {
+							if text, ok := g.pushClipboard(); ok {
+								_ = status.SetText("已发送：" + clipPreview(text))
+							} else {
+								_ = status.SetText("剪贴板里没有文本")
+							}
+							rebuild()
+						},
+					},
+					CheckBox{
+						AssignTo: &autoBox,
+						Text:     "自动复制手机发来的文字",
+						Checked:  g.autoCopy,
+						OnCheckedChanged: func() {
+							g.autoCopy = autoBox.Checked()
+						},
+					},
+					HSpacer{},
+					Label{AssignTo: &status, Text: "", Font: uiHint, TextColor: uiMuted},
+				},
+			},
+			Composite{
+				Layout: HBox{MarginsZero: true},
+				Children: []Widget{
+					LineEdit{AssignTo: &input, StretchFactor: 1},
+					PushButton{
+						Text:    "发送文字",
+						MinSize: Size{Width: 96, Height: 32},
+						OnClicked: func() {
+							if g.pushText(input.Text()) {
+								_ = status.SetText("已发送：" + clipPreview(input.Text()))
+								_ = input.SetText("")
+								rebuild()
+							} else {
+								_ = status.SetText("输入框是空的")
+							}
+						},
+					},
+				},
+			},
+			Label{Text: "最近记录（双击复制）", Font: uiSect, TextColor: uiDark},
+			ListBox{
+				AssignTo:      &list,
+				Model:         []string{},
+				StretchFactor: 1,
+				OnItemActivated: func() {
+					i := list.CurrentIndex()
+					if i < 0 || i >= len(items) {
+						return
+					}
+					if err := walk.Clipboard().SetText(items[i].Content); err != nil {
+						_ = status.SetText("复制失败：" + err.Error())
+						return
+					}
+					_ = status.SetText("已复制：" + clipPreview(items[i].Content))
+				},
+			},
+			Composite{
+				Layout: HBox{MarginsZero: true, Spacing: 6},
+				Children: []Widget{
+					PushButton{
+						Text:    "删除选中",
+						MinSize: Size{Width: 96, Height: 30},
+						OnClicked: func() {
+							i := list.CurrentIndex()
+							if i < 0 || i >= len(items) {
+								_ = status.SetText("先在列表里选中一条")
+								return
+							}
+							if g.srv.store.DeleteClip(items[i].ID) {
+								_ = status.SetText("已删除一条记录")
+							} else {
+								_ = status.SetText("这条记录已经不在了")
+							}
+							rebuild()
+						},
+					},
+					PushButton{
+						Text:    "清空",
+						MinSize: Size{Width: 84, Height: 30},
+						OnClicked: func() {
+							if len(items) == 0 {
+								_ = status.SetText("记录已经是空的")
+								return
+							}
+							if walk.MsgBox(dlg, "清空记录",
+								"确定清空全部文字记录吗？这个操作不能撤销。",
+								walk.MsgBoxYesNo|walk.MsgBoxIconQuestion) != walk.DlgCmdYes {
+								return
+							}
+							g.srv.store.ClearClips()
+							_ = status.SetText("记录已清空")
+							rebuild()
+						},
+					},
+					PushButton{
+						Text:    "刷新",
+						MinSize: Size{Width: 84, Height: 30},
+						OnClicked: func() {
+							rebuild()
+							_ = status.SetText("已刷新")
+						},
+					},
+					HSpacer{},
+					PushButton{
+						AssignTo:  &closePB,
+						Text:      "关闭",
+						MinSize:   Size{Width: 88, Height: 30},
+						OnClicked: func() { dlg.Cancel() },
+					},
+				},
+			},
+		},
+	}.Create(g.mw)
+	if err != nil {
+		walk.MsgBox(g.mw, "打开面板失败", err.Error(), walk.MsgBoxIconError)
+		return
+	}
+
+	dlg.SetCancelButton(closePB)
+	rebuild()
+	dlg.Run()
+}
+
+// openSettings 配对码、网络地址、公网中转、已配对手机都放这里。
 func (g *gui) openSettings() {
 	var dlg *walk.Dialog
 	var urlEdit, keyEdit *walk.LineEdit
+	var tokLbl *walk.Label
+	var netBox *walk.ComboBox
 	var okPB, cancelPB *walk.PushButton
 
 	phones := g.srv.phones()
 	var phoneList *walk.ListBox
 
-	children := []Widget{
-		Label{Text: "公网兜底：填了之后，手机不在同一 WiFi 时文件会自动走中转服务器。"},
-		Label{Text: "中转地址（例如 https://drop.example.com）"},
-		LineEdit{AssignTo: &urlEdit, Text: g.srv.relayURL()},
-		Label{Text: "上传密钥"},
-		LineEdit{AssignTo: &keyEdit, Text: g.srv.relayKey()},
-		Label{
-			Text: "两项都留空表示不用公网兜底。改完手机需要重新扫一次二维码。",
-			Font: Font{PointSize: 8},
-		},
-		Label{Text: "已配对的手机（「发送到手机」时可选）"},
-		ListBox{AssignTo: &phoneList, Model: phoneLabels(phones), MaxSize: Size{Height: 96}},
-		Composite{
-			Layout: HBox{MarginsZero: true},
-			Children: []Widget{
-				PushButton{
-					Text: "移除选中",
-					OnClicked: func() {
-						i := phoneList.CurrentIndex()
-						if i < 0 || i >= len(phones) {
-							return
-						}
-						g.srv.removePhone(phones[i].ID)
-						phones = append(phones[:i], phones[i+1:]...)
-						_ = phoneList.SetModel(phoneLabels(phones))
-						_ = g.clipLbl.SetText("已移除配对手机")
-					},
-				},
-				HSpacer{},
-			},
-		},
-		Composite{
-			Layout: HBox{},
-			Children: []Widget{
-				HSpacer{},
-				PushButton{AssignTo: &okPB, Text: "保存", OnClicked: func() { dlg.Accept() }},
-				PushButton{AssignTo: &cancelPB, Text: "取消", OnClicked: func() { dlg.Cancel() }},
-			},
-		},
+	// 每次打开都重新扫一遍网卡，多网卡机器可以在这里手动指定
+	eps := Candidates(g.srv.port)
+	netLabels := make([]string, 0, len(eps))
+	for _, e := range eps {
+		netLabels = append(netLabels, fmt.Sprintf("%s  ·  %s", e.Addr(), e.Iface))
+	}
+	if len(netLabels) == 0 {
+		netLabels = []string{"未找到可用网络"}
+	}
+	curIdx := 0
+	pref := g.srv.preferredIP()
+	for i, e := range eps {
+		if e.IP == pref {
+			curIdx = i
+			break
+		}
 	}
 
 	err := Dialog{
 		AssignTo: &dlg,
 		Title:    "设置",
 		Icon:     walk.IconInformation(),
-		MinSize:  Size{Width: 540, Height: 460},
-		Layout:   VBox{},
-		Children: children,
+		MinSize:  Size{Width: 640, Height: 580},
+		Layout:   VBox{Margins: Margins{Left: 22, Top: 18, Right: 22, Bottom: 18}, Spacing: 10},
+		Children: []Widget{
+			Label{Text: "配对", Font: uiSect, TextColor: uiDark},
+			Composite{
+				Layout: HBox{MarginsZero: true},
+				Children: []Widget{
+					Label{Text: "配对码", Font: uiBody},
+					Label{
+						AssignTo: &tokLbl,
+						Text:     g.srv.token()[:8],
+						MinSize:  Size{Width: 170},
+						Font:     Font{Family: "Consolas", PointSize: 12, Bold: true},
+					},
+					HSpacer{},
+					PushButton{
+						Text:    "复制",
+						MinSize: Size{Width: 84, Height: 30},
+						OnClicked: func() {
+							_ = walk.Clipboard().SetText(g.srv.token())
+							_ = tokLbl.SetText("已复制")
+						},
+					},
+					PushButton{
+						Text:    "重置",
+						MinSize: Size{Width: 84, Height: 30},
+						OnClicked: func() {
+							if tok := g.rotateToken(); tok != "" {
+								_ = tokLbl.SetText(tok[:8])
+							}
+						},
+					},
+				},
+			},
+			Composite{
+				Layout: HBox{MarginsZero: true},
+				Children: []Widget{
+					Label{Text: "网络地址", Font: uiBody},
+					ComboBox{
+						AssignTo:     &netBox,
+						Model:        netLabels,
+						CurrentIndex: curIdx,
+						OnCurrentIndexChanged: func() {
+							i := netBox.CurrentIndex()
+							if i >= 0 && i < len(eps) {
+								g.setNetwork(eps[i].IP)
+							}
+						},
+					},
+					PushButton{
+						Text:    "重新检测",
+						MinSize: Size{Width: 96, Height: 30},
+						OnClicked: func() {
+							g.reloadNet()
+							_ = tokLbl.SetText(g.srv.token()[:8])
+						},
+					},
+				},
+			},
+			Label{Text: "公网中转", Font: uiSect, TextColor: uiDark},
+			Label{
+				Text:      "填了之后，手机不在同一 WiFi 时文件会自动走中转服务器。两项留空表示不用。",
+				Font:      uiHint,
+				TextColor: uiMuted,
+			},
+			Composite{
+				Layout: HBox{MarginsZero: true},
+				Children: []Widget{
+					Label{Text: "地址", Font: uiBody, MinSize: Size{Width: 52}},
+					LineEdit{AssignTo: &urlEdit, Text: g.srv.relayURL(), StretchFactor: 1},
+				},
+			},
+			Composite{
+				Layout: HBox{MarginsZero: true},
+				Children: []Widget{
+					Label{Text: "密钥", Font: uiBody, MinSize: Size{Width: 52}},
+					LineEdit{AssignTo: &keyEdit, Text: g.srv.relayKey(), StretchFactor: 1},
+				},
+			},
+			Label{Text: "已配对的手机", Font: uiSect, TextColor: uiDark},
+			ListBox{AssignTo: &phoneList, Model: phoneLabels(phones), MaxSize: Size{Height: 88}},
+			Composite{
+				Layout: HBox{MarginsZero: true},
+				Children: []Widget{
+					PushButton{
+						Text:    "移除选中",
+						MinSize: Size{Width: 96, Height: 30},
+						OnClicked: func() {
+							i := phoneList.CurrentIndex()
+							if i < 0 || i >= len(phones) {
+								return
+							}
+							g.srv.removePhone(phones[i].ID)
+							phones = append(phones[:i], phones[i+1:]...)
+							_ = phoneList.SetModel(phoneLabels(phones))
+						},
+					},
+					HSpacer{},
+				},
+			},
+			Composite{
+				Layout: HBox{},
+				Children: []Widget{
+					HSpacer{},
+					PushButton{AssignTo: &okPB, Text: "保存", MinSize: Size{Width: 88, Height: 30}, OnClicked: func() { dlg.Accept() }},
+					PushButton{AssignTo: &cancelPB, Text: "取消", MinSize: Size{Width: 88, Height: 30}, OnClicked: func() { dlg.Cancel() }},
+				},
+			},
+		},
 	}.Create(g.mw)
 	if err != nil {
 		walk.MsgBox(g.mw, "打开设置失败", err.Error(), walk.MsgBoxIconError)
@@ -617,11 +806,11 @@ func (g *gui) openSettings() {
 	}
 
 	g.srv.setRelay(url, key)
-	g.reloadNet()
+	g.updateQR()
 	if url == "" {
-		_ = g.clipLbl.SetText("已关闭公网兜底")
+		_ = g.hintLbl.SetText("已关闭公网兜底")
 	} else {
-		_ = g.clipLbl.SetText("公网兜底已开启，手机请重新扫码")
+		_ = g.hintLbl.SetText("公网兜底已开启，手机请重新扫码")
 	}
 }
 
@@ -630,7 +819,7 @@ func (g *gui) openSettings() {
 func (g *gui) sendToPhone() {
 	i := g.tv.CurrentIndex()
 	if i < 0 || i >= len(g.model.items) {
-		_ = g.clipLbl.SetText("先在列表里选中一个文件")
+		_ = g.hintLbl.SetText("先在列表里选中一个文件")
 		return
 	}
 	file := g.model.items[i]
@@ -664,13 +853,13 @@ func (g *gui) sendToPhone() {
 		}
 		phone = chosen
 	}
-	_ = g.clipLbl.SetText("正在发送到 " + phone.Name + "…")
+	_ = g.hintLbl.SetText("正在发送到 " + phone.Name + "…")
 
 	go func() {
 		f, openErr := os.Open(path)
 		if openErr != nil {
 			g.mw.Synchronize(func() {
-				_ = g.clipLbl.SetText("发送失败")
+				_ = g.hintLbl.SetText("发送失败")
 				walk.MsgBox(g.mw, "打开文件失败", openErr.Error(), walk.MsgBoxIconError)
 			})
 			return
@@ -679,7 +868,7 @@ func (g *gui) sendToPhone() {
 		if statErr != nil {
 			f.Close()
 			g.mw.Synchronize(func() {
-				_ = g.clipLbl.SetText("发送失败")
+				_ = g.hintLbl.SetText("发送失败")
 				walk.MsgBox(g.mw, "读取文件失败", statErr.Error(), walk.MsgBoxIconError)
 			})
 			return
@@ -690,11 +879,11 @@ func (g *gui) sendToPhone() {
 
 		g.mw.Synchronize(func() {
 			if putErr != nil {
-				_ = g.clipLbl.SetText("发送失败")
+				_ = g.hintLbl.SetText("发送失败")
 				walk.MsgBox(g.mw, "发送到手机失败", putErr.Error(), walk.MsgBoxIconError)
 				return
 			}
-			_ = g.clipLbl.SetText("已发送到 " + phone.Name + "，打开 App 即可接收")
+			_ = g.hintLbl.SetText("已发送到 " + phone.Name + "，打开 App 即可接收")
 			walk.MsgBox(g.mw, "已发送",
 				file.Name+" 已投递到中转。\r\n\r\n手机打开 AirLink，在「待接收」里点下载即可。",
 				walk.MsgBoxIconInformation)
