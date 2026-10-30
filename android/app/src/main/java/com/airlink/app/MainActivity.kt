@@ -44,6 +44,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
@@ -299,6 +301,11 @@ private fun HomeScreen(
 
     var inbox by remember { mutableStateOf<List<RelayItem>>(emptyList()) }
     var registered by remember { mutableStateOf(false) }
+    // 窄屏（大部分 5.5-6 寸手机）收紧内边距，给内容多留点宽度
+    val cfg = LocalConfiguration.current
+    val compact = cfg.screenWidthDp < 380
+    val pagePad = if (compact) 10.dp else 14.dp
+
     var refreshKey by remember { mutableStateOf(0) }
     var showSettings by remember { mutableStateOf(false) }
     var lastDiscover by remember { mutableStateOf(0L) }
@@ -380,7 +387,7 @@ private fun HomeScreen(
     Box(Modifier.fillMaxSize()) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(14.dp),
+        contentPadding = PaddingValues(pagePad),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
@@ -399,9 +406,21 @@ private fun HomeScreen(
                         fontSize = 12.sp,
                     )
                 }
-                TextButton(onClick = { refreshKey++ }) { Text("刷新", fontSize = 13.sp) }
-                TextButton(onClick = { showSettings = true }) { Text("设置", fontSize = 13.sp) }
-                TextButton(onClick = onDisconnect) { Text("返回", fontSize = 13.sp) }
+                TextButton(
+                    onClick = { refreshKey++ },
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                    modifier = Modifier.widthIn(min = 0.dp),
+                ) { Text("刷新", fontSize = 13.sp) }
+                TextButton(
+                    onClick = { showSettings = true },
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                    modifier = Modifier.widthIn(min = 0.dp),
+                ) { Text("设置", fontSize = 13.sp) }
+                TextButton(
+                    onClick = onDisconnect,
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                    modifier = Modifier.widthIn(min = 0.dp),
+                ) { Text("返回", fontSize = 13.sp) }
             }
         }
 
@@ -451,8 +470,10 @@ private fun HomeScreen(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                             )
                         },
-                        shape = RoundedCornerShape(9.dp),
-                    ) { Text("选择", fontSize = 13.sp, color = AccentDark) }
+                        modifier = Modifier.height(32.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp),
+                    ) { Text("选择", fontSize = 12.5.sp, color = AccentDark) }
                 }
             }
         }
@@ -512,9 +533,11 @@ private fun HomeScreen(
                         }
                         OutlinedButton(
                             onClick = { startDownload(ctx, device, f) },
-                            shape = RoundedCornerShape(9.dp),
+                            modifier = Modifier.height(32.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp),
                         ) {
-                            Text("下载", fontSize = 13.sp, color = AccentDark)
+                            Text("下载", fontSize = 12.5.sp, color = AccentDark)
                         }
                     }
                 }
@@ -591,7 +614,12 @@ private fun HomeScreen(
 
         items(clips.take(6), key = { it.id }) { c ->
             Card {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // TextButton 自带 58dp 最小宽度，两个并排会把「删除」挤出屏幕，
+                // 这里把最小宽度和内边距都放开，让按钮按文字宽度走。
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Column(Modifier.weight(1f)) {
                         Text(c.content, fontSize = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(4.dp))
@@ -601,20 +629,27 @@ private fun HomeScreen(
                             fontSize = 11.sp,
                         )
                     }
-                    Spacer(Modifier.width(8.dp))
-                    TextButton(onClick = {
-                        writeClipboard(ctx, c.content)
-                        toast(ctx, "已复制到手机剪贴板")
-                    }) { Text("复制", color = AccentDark, fontSize = 13.sp) }
-                    TextButton(onClick = {
-                        scope.launch {
-                            val ok = withContext(Dispatchers.IO) {
-                                runCatching { Api(device).deleteClip(c.id) }.isSuccess
+                    TextButton(
+                        onClick = {
+                            writeClipboard(ctx, c.content)
+                            toast(ctx, "已复制到手机剪贴板")
+                        },
+                        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 4.dp),
+                        modifier = Modifier.widthIn(min = 0.dp),
+                    ) { Text("复制", color = AccentDark, fontSize = 12.sp) }
+                    TextButton(
+                        onClick = {
+                            scope.launch {
+                                val ok = withContext(Dispatchers.IO) {
+                                    runCatching { Api(device).deleteClip(c.id) }.isSuccess
+                                }
+                                toast(ctx, if (ok) "已删除" else "删除失败")
+                                refreshKey++
                             }
-                            toast(ctx, if (ok) "已删除" else "删除失败")
-                            refreshKey++
-                        }
-                    }) { Text("删", color = Muted, fontSize = 13.sp) }
+                        },
+                        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 4.dp),
+                        modifier = Modifier.widthIn(min = 0.dp),
+                    ) { Text("删除", color = Muted, fontSize = 12.sp) }
                 }
             }
         }
