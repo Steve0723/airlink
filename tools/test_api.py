@@ -207,5 +207,41 @@ phones = state.get("phones", [])
 check("手机已持久化", any(p["id"] == "phone-test-1" for p in phones), phones)
 check("重复登记不产生两条", len([p for p in phones if p["id"] == "phone-test-1"]) == 1, phones)
 
+print("\n[11] 桌面端页面与控制台接口")
+s, body, _ = req("GET", "/ui", raw=True)
+check("桌面页面可访问", s == 200 and b"<html" in body.lower(), s)
+
+s, j, _ = req("POST", "/api/console/upload?name=" + urllib.parse.quote("控制台测试.txt"), b"console")
+fid = j["file"]["id"]
+s, j, _ = req("GET", "/api/console/clips")
+check("控制台读记录", s == 200 and "clips" in j, j)
+
+s, j, _ = req("POST", "/api/v1/clipboard", {"content": "待删除的记录", "from": "手机"}, AUTH)
+cid = j["clip"]["id"]
+s, j, _ = req("DELETE", f"/api/console/clips/{cid}")
+check("控制台删记录", s == 200, j)
+s, j, _ = req("DELETE", "/api/console/clips/nonexistent")
+check("删不存在的记录返回 404", s == 404, s)
+
+s, j, _ = req("DELETE", f"/api/console/files/{fid}")
+check("控制台删文件", s == 200, j)
+s, j, _ = req("GET", "/api/v1/files", headers=AUTH)
+check("删掉的文件不在了", all(f["id"] != fid for f in j["files"]), j)
+
+s, j, _ = req("GET", "/api/console/settings")
+check("读设置", s == 200 and "relayURL" in j, j)
+
+s, j, _ = req("POST", "/api/console/settings", {"relayURL": "https://drop.example.com", "relayKey": "k1"})
+check("保存中转配置", s == 200, j)
+s, j, _ = req("GET", "/api/console/settings")
+check("中转配置已持久化", j.get("relayURL") == "https://drop.example.com", j)
+
+s, j, _ = req("POST", "/api/console/settings", {"relayURL": "https://x.com", "relayKey": ""})
+check("只填地址被拒", s == 400, s)
+s, j, _ = req("POST", "/api/console/settings", {"relayURL": "ftp://x", "relayKey": "k"})
+check("非法协议被拒", s == 400, s)
+s, j, _ = req("POST", "/api/console/settings", {"relayURL": "", "relayKey": ""})
+check("清空中转配置", s == 200, j)
+
 print(f"\n结果：{passed} 通过，{failed} 失败\n")
 sys.exit(1 if failed else 0)

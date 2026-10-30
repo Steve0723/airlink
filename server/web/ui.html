@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AirLink</title>
+<style>
+  :root {
+    --bg: #fafbfa;
+    --card: #ffffff;
+    --tile: #edf0ee;
+    --tile-hover: #e2e6e3;
+    --accent: #1d9e75;
+    --accent-dark: #0f6e56;
+    --accent-soft: #e8f5f0;
+    --text: #171b19;
+    --muted: #6b7370;
+    --line: #e3e7e5;
+    --danger: #c0453f;
+    --radius-lg: 20px;
+    --radius: 16px;
+    --radius-sm: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+
+  .app {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 18px 20px 28px;
+  }
+
+  /* ---------- 顶部 ---------- */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .logo {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: var(--accent);
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+  }
+
+  .logo svg { width: 20px; height: 20px; stroke: #fff; }
+
+  .brand h1 {
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: .2px;
+  }
+
+  .brand p {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 1px;
+  }
+
+  .spacer { flex: 1; }
+
+  .icon-btn {
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition: background .14s;
+  }
+
+  .icon-btn:hover { background: var(--tile); }
+  .icon-btn svg { width: 19px; height: 19px; stroke: var(--muted); }
+
+  /* ---------- 配对卡片 ---------- */
+  .pair {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 18px 22px;
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    margin-bottom: 22px;
+  }
+
+  .qr {
+    width: 132px;
+    height: 132px;
+    border-radius: 12px;
+    display: block;
+    flex-shrink: 0;
+  }
+
+  .pair h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .pair-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .token {
+    font-family: Consolas, monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: .5px;
+  }
+
+  .link-btn {
+    border: none;
+    background: transparent;
+    color: var(--accent);
+    font-size: 12.5px;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 6px;
+  }
+
+  .link-btn:hover { background: var(--accent-soft); }
+
+  /* ---------- 区块标题 ---------- */
+  .sect {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 12px 2px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .sect .count {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--muted);
+  }
+
+  .sect .spacer { flex: 1; }
+
+  /* ---------- 卡片按钮 ---------- */
+  .tiles {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+
+  .tile {
+    width: 110px;
+    height: 96px;
+    border: none;
+    border-radius: var(--radius);
+    background: var(--tile);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-family: inherit;
+    font-size: 13.5px;
+    color: var(--accent);
+    transition: background .14s, transform .08s;
+  }
+
+  .tile:hover { background: var(--tile-hover); }
+  .tile:active { transform: scale(.975); }
+  .tile svg { width: 22px; height: 22px; stroke: var(--accent); }
+
+  /* ---------- 文件列表 ---------- */
+  .files {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 8px;
+    min-height: 120px;
+  }
+
+  .file {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 14px;
+    border-radius: var(--radius-sm);
+    cursor: default;
+    transition: background .12s;
+  }
+
+  .file:hover { background: #f7f9f8; }
+  .file + .file { margin-top: 1px; }
+
+  .file-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    background: var(--accent-soft);
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+  }
+
+  .file-icon svg { width: 17px; height: 17px; stroke: var(--accent-dark); }
+
+  .file-main { flex: 1; min-width: 0; }
+
+  .file-name {
+    font-size: 13.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .file-meta {
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-top: 1px;
+  }
+
+  .file-actions {
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity .12s;
+  }
+
+  .file:hover .file-actions { opacity: 1; }
+
+  .mini-btn {
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: 12.5px;
+    font-family: inherit;
+    padding: 4px 8px;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+
+  .mini-btn:hover { background: var(--tile); color: var(--text); }
+  .mini-btn.danger:hover { color: var(--danger); }
+
+  .empty {
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 34px 0;
+  }
+
+  /* ---------- 右键菜单 ---------- */
+  .ctx {
+    position: fixed;
+    z-index: 100;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.14);
+    padding: 5px;
+    min-width: 148px;
+    display: none;
+  }
+
+  .ctx.show { display: block; }
+
+  .ctx button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  .ctx button:hover { background: var(--tile); }
+  .ctx button.danger { color: var(--danger); }
+  .ctx hr { border: none; border-top: 1px solid var(--line); margin: 5px 8px; }
+
+  /* ---------- 模态框 ---------- */
+  .mask {
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 24, 22, .3);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    backdrop-filter: blur(1.5px);
+  }
+
+  .mask.show { display: flex; }
+
+  .modal {
+    background: #fff;
+    border-radius: var(--radius-lg);
+    padding: 22px;
+    width: 480px;
+    max-width: calc(100vw - 40px);
+    max-height: calc(100vh - 60px);
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 18px 50px rgba(0,0,0,.18);
+  }
+
+  .modal h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+
+  .field { margin-bottom: 14px; }
+
+  .field label {
+    display: block;
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .input, .select {
+    width: 100%;
+    height: 38px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 0 12px;
+    font-family: inherit;
+    font-size: 13.5px;
+    color: var(--text);
+    background: #fff;
+    outline: none;
+    transition: border-color .14s, box-shadow .14s;
+  }
+
+  .input:focus, .select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(29,158,117,.13);
+  }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 18px;
+  }
+
+  .btn {
+    height: 38px;
+    padding: 0 18px;
+    border-radius: 10px;
+    border: none;
+    font-family: inherit;
+    font-size: 13.5px;
+    cursor: pointer;
+    transition: background .14s, transform .08s;
+  }
+
+  .btn:active { transform: scale(.98); }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .btn-primary:hover { background: var(--accent-dark); }
+
+  .btn-ghost {
+    background: var(--tile);
+    color: var(--text);
+  }
+
+  .btn-ghost:hover { background: var(--tile-hover); }
+
+  .btn-danger {
+    background: transparent;
+    color: var(--danger);
+  }
+
+  .btn-danger:hover { background: #fbeceb; }
+
+  /* ---------- 记录列表 ---------- */
+  .clips {
+    flex: 1;
+    min-height: 160px;
+    max-height: 300px;
+    overflow-y: auto;
+    border-radius: var(--radius-sm);
+    background: #fafbfa;
+    padding: 6px;
+    margin-bottom: 4px;
+  }
+
+  .clip {
+    padding: 10px 12px;
+    border-radius: 10px;
+    cursor: default;
+  }
+
+  .clip:hover { background: #f1f4f2; }
+
+  .clip-text {
+    font-size: 13px;
+    word-break: break-all;
+    white-space: pre-wrap;
+    max-height: 62px;
+    overflow: hidden;
+  }
+
+  .clip-meta {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .clip-meta .acts { margin-left: auto; display: flex; gap: 2px; }
+
+  /* ---------- 提示条 ---------- */
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 28px;
+    transform: translateX(-50%) translateY(12px);
+    background: rgba(23, 27, 25, .9);
+    color: #fff;
+    font-size: 13px;
+    padding: 9px 16px;
+    border-radius: 10px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .18s, transform .18s;
+    z-index: 200;
+  }
+
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 9h13l-3-3M20 15H7l3 3"/>
+      </svg>
+    </div>
+    <div class="brand">
+      <h1>AirLink</h1>
+      <p id="subtitle">正在读取…</p>
+    </div>
+    <div class="spacer"></div>
+    <button class="icon-btn" id="btn-settings" title="设置">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6h.09A1.7 1.7 0 0 0 10 3.04V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9v.09a1.7 1.7 0 0 0 1.56 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
+  </header>
+
+  <section class="pair">
+    <img class="qr" id="qr" alt="配对二维码">
+    <div>
+      <h2>手机扫码配对</h2>
+      <div class="pair-row">
+        配对码 <span class="token" id="token">--------</span>
+        <button class="link-btn" id="btn-copy-token">复制</button>
+        <button class="link-btn" id="btn-rotate">重置</button>
+      </div>
+      <div class="pair-row" id="pair-hint">手机和电脑需要连同一个 WiFi</div>
+    </div>
+  </section>
+
+  <h3 class="sect">选择</h3>
+  <div class="tiles">
+    <button class="tile" id="tile-file">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>
+        <path d="M14 3v5h5"/>
+      </svg>
+      文件
+    </button>
+    <button class="tile" id="tile-text">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round">
+        <path d="M4 8h16M4 13h16M4 18h10"/>
+      </svg>
+      文本
+    </button>
+    <button class="tile" id="tile-clip">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="6" y="5" width="12" height="16" rx="2"/>
+        <path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/>
+      </svg>
+      剪贴板
+    </button>
+  </div>
+
+  <h3 class="sect">
+    收到的文件
+    <span class="count" id="file-count"></span>
+    <span class="spacer"></span>
+  </h3>
+  <div class="files" id="files">
+    <div class="empty">还没有文件</div>
+  </div>
+</div>
+
+<!-- 右键菜单 -->
+<div class="ctx" id="ctx"></div>
+
+<!-- 文本面板 -->
+<div class="mask" id="mask-text">
+  <div class="modal">
+    <h2>文本</h2>
+    <div class="field">
+      <textarea class="input" id="text-input" rows="3"
+        style="height:auto;padding:10px 12px;resize:none"
+        placeholder="输入要发到手机的文字"></textarea>
+    </div>
+    <div class="modal-actions" style="margin-top:-6px;margin-bottom:14px">
+      <button class="btn btn-primary" id="btn-send-text">发送</button>
+    </div>
+    <div class="sect" style="font-size:13px;margin-bottom:8px">最近记录</div>
+    <div class="clips" id="clips"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-text-close">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 设置面板 -->
+<div class="mask" id="mask-settings">
+  <div class="modal">
+    <h2>设置</h2>
+
+    <div class="field">
+      <label>网络地址（多网卡时手动指定）</label>
+      <select class="select" id="set-net"></select>
+    </div>
+
+    <div class="field">
+      <label>公网中转地址（留空表示不用）</label>
+      <input class="input" id="set-relay" placeholder="https://drop.example.com">
+    </div>
+
+    <div class="field">
+      <label>中转密钥</label>
+      <input class="input" id="set-key" placeholder="和服务器上的 AIRLINK_RELAY_KEY 一致">
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-settings-close">取消</button>
+      <button class="btn btn-primary" id="btn-settings-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+let state = null;
+let ctxTarget = null;
+
+// ---------- 通用 ----------
+async function api(path, opts = {}) {
+  const r = await fetch(path, opts);
+  if (!r.ok) {
+    let msg = `请求失败 (${r.status})`;
+    try { msg = (await r.json()).message || msg; } catch {}
+    throw new Error(msg);
+  }
+  const ct = r.headers.get("content-type") || "";
+  return ct.includes("json") ? r.json() : r.text();
+}
+
+let toastTimer = null;
+function toast(msg) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 1800);
+}
+
+function humanSize(n) {
+  if (n < 1024) return n + " B";
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = n, i = -1;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return v.toFixed(1) + " " + units[i];
+}
+
+function fmtTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const pad = (x) => String(x).padStart(2, "0");
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// ---------- 渲染 ----------
+async function refresh() {
+  try {
+    state = await api("/api/console/state");
+    render();
+  } catch (e) {
+    $("subtitle").textContent = "连接中断，正在重试…";
+  }
+}
+
+function render() {
+  const ep = (state.endpoints || [])[0];
+  const addr = ep ? `${ep.ip}:${ep.port}` : `127.0.0.1:${state.port}`;
+  const n = (state.files || []).length;
+  $("subtitle").textContent = `${state.device} · ${addr} · ${n} 个文件`;
+  $("token").textContent = (state.token || "").slice(0, 8);
+  $("file-count").textContent = n ? `${n} 个` : "";
+
+  const qr = $("qr");
+  const src = "/api/console/qr.png?v=" + encodeURIComponent(state.token || "");
+  if (qr.dataset.src !== src) {
+    qr.dataset.src = src;
+    qr.src = src;
+  }
+
+  renderFiles(state.files || []);
+}
+
+function renderFiles(files) {
+  const box = $("files");
+  if (!files.length) {
+    box.innerHTML = '<div class="empty">还没有文件</div>';
+    return;
+  }
+  box.innerHTML = files.map((f) => `
+    <div class="file" data-id="${f.id}">
+      <div class="file-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>
+          <path d="M14 3v5h5"/>
+        </svg>
+      </div>
+      <div class="file-main">
+        <div class="file-name" title="${escapeAttr(f.name)}">${escapeHtml(f.name)}</div>
+        <div class="file-meta">${humanSize(f.size)} · ${fmtTime(f.modTime)}</div>
+      </div>
+      <div class="file-actions">
+        <button class="mini-btn" data-act="open">打开</button>
+        <button class="mini-btn" data-act="copy">复制名</button>
+        <button class="mini-btn danger" data-act="delete">删除</button>
+      </div>
+    </div>
+  `).join("");
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+
+// ---------- 文件操作 ----------
+async function uploadFiles(fileList) {
+  if (!fileList.length) return;
+  let ok = 0;
+  for (const f of fileList) {
+    try {
+      await api(`/api/console/upload?name=${encodeURIComponent(f.name)}`, {
+        method: "POST",
+        body: f,
+      });
+      ok++;
+    } catch (e) {
+      toast(`${f.name}：${e.message}`);
+    }
+  }
+  if (ok) toast(`已添加 ${ok} 个文件`);
+  refresh();
+}
+
+function pickFiles() {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.multiple = true;
+  input.onchange = () => uploadFiles([...input.files]);
+  input.click();
+}
+
+async function openFile(id) {
+  try { await api(`/api/console/files/${id}/open`, { method: "POST" }); }
+  catch (e) { toast(e.message); }
+}
+
+async function revealFile(id) {
+  try { await api(`/api/console/files/${id}/reveal`, { method: "POST" }); }
+  catch (e) { toast(e.message); }
+}
+
+async function copyFileName(id) {
+  const f = (state.files || []).find((x) => x.id === id);
+  if (!f) return;
+  try {
+    await navigator.clipboard.writeText(f.name);
+    toast("已复制文件名");
+  } catch {
+    toast("复制失败");
+  }
+}
+
+async function deleteFile(id) {
+  try {
+    await api(`/api/console/files/${id}`, { method: "DELETE" });
+    toast("已删除");
+    refresh();
+  } catch (e) { toast(e.message); }
+}
+
+// ---------- 右键菜单 ----------
+function showCtx(x, y, id) {
+  ctxTarget = id;
+  const ctx = $("ctx");
+  ctx.innerHTML = `
+    <button data-act="open">打开</button>
+    <button data-act="copy">复制文件名</button>
+    <button data-act="reveal">在文件夹中显示</button>
+    <hr>
+    <button data-act="delete" class="danger">删除</button>
+  `;
+  ctx.classList.add("show");
+  const r = ctx.getBoundingClientRect();
+  ctx.style.left = Math.min(x, innerWidth - r.width - 8) + "px";
+  ctx.style.top = Math.min(y, innerHeight - r.height - 8) + "px";
+}
+
+function hideCtx() {
+  $("ctx").classList.remove("show");
+  ctxTarget = null;
+}
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".ctx")) hideCtx();
+});
+
+$("ctx").addEventListener("click", (e) => {
+  const btn = e.target.closest("button");
+  if (!btn || !ctxTarget) return;
+  const id = ctxTarget;
+  const act = btn.dataset.act;
+  hideCtx();
+  if (act === "open") openFile(id);
+  if (act === "copy") copyFileName(id);
+  if (act === "reveal") revealFile(id);
+  if (act === "delete") deleteFile(id);
+});
+
+$("files").addEventListener("contextmenu", (e) => {
+  const row = e.target.closest(".file");
+  if (!row) return;
+  e.preventDefault();
+  showCtx(e.clientX, e.clientY, row.dataset.id);
+});
+
+$("files").addEventListener("click", (e) => {
+  const btn = e.target.closest(".mini-btn");
+  if (!btn) return;
+  const id = e.target.closest(".file").dataset.id;
+  const act = btn.dataset.act;
+  if (act === "open") openFile(id);
+  if (act === "copy") copyFileName(id);
+  if (act === "delete") deleteFile(id);
+});
+
+$("files").addEventListener("dblclick", (e) => {
+  const row = e.target.closest(".file");
+  if (row) openFile(row.dataset.id);
+});
+
+// ---------- 文本 ----------
+async function openTextPanel() {
+  $("mask-text").classList.add("show");
+  await loadClips();
+  $("text-input").focus();
+}
+
+async function loadClips() {
+  try {
+    const d = await api("/api/console/clips");
+    renderClips(d.clips || []);
+  } catch (e) {
+    $("clips").innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderClips(clips) {
+  const box = $("clips");
+  if (!clips.length) {
+    box.innerHTML = '<div class="empty">还没有记录</div>';
+    return;
+  }
+  box.innerHTML = clips.map((c) => `
+    <div class="clip" data-id="${c.id}" data-content="${escapeAttr(c.content)}">
+      <div class="clip-text">${escapeHtml(c.content)}</div>
+      <div class="clip-meta">
+        <span>${c.from === "手机" ? "来自手机" : "来自电脑"} · ${fmtTime(c.at)}</span>
+        <span class="acts">
+          <button class="mini-btn" data-act="copy">复制</button>
+          <button class="mini-btn danger" data-act="delete">删除</button>
+        </span>
+      </div>
+    </div>
+  `).join("");
+}
+
+$("clips").addEventListener("click", async (e) => {
+  const btn = e.target.closest(".mini-btn");
+  if (!btn) return;
+  const row = e.target.closest(".clip");
+  const id = row.dataset.id;
+  if (btn.dataset.act === "copy") {
+    try {
+      await navigator.clipboard.writeText(row.dataset.content);
+      toast("已复制");
+    } catch { toast("复制失败"); }
+  } else {
+    try {
+      await api(`/api/console/clips/${id}`, { method: "DELETE" });
+      await loadClips();
+      toast("已删除");
+    } catch (err) { toast(err.message); }
+  }
+});
+
+$("btn-send-text").onclick = async () => {
+  const text = $("text-input").value.trim();
+  if (!text) { toast("先输入内容"); return; }
+  try {
+    await api("/api/console/text", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: text }),
+    });
+    $("text-input").value = "";
+    toast("已发送到手机");
+    await loadClips();
+  } catch (e) { toast(e.message); }
+};
+
+$("btn-text-close").onclick = () => $("mask-text").classList.remove("show");
+
+// ---------- 剪贴板 ----------
+async function sendClipboard() {
+  let text = "";
+  try {
+    text = await navigator.clipboard.readText();
+  } catch {
+    toast("读不到剪贴板，请用「文本」手动输入");
+    return;
+  }
+  if (!text.trim()) { toast("剪贴板里没有文字"); return; }
+  try {
+    await api("/api/console/clipboard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: text }),
+    });
+    toast("已发送剪贴板");
+  } catch (e) { toast(e.message); }
+}
+
+// ---------- 设置 ----------
+async function openSettings() {
+  $("mask-settings").classList.add("show");
+  // 用 #settings 直接进来时 state 还没加载完，先等一次，
+  // 否则下拉框会是空的。
+  if (!state) await refresh();
+
+  const sel = $("set-net");
+  sel.innerHTML = "";
+  (state?.endpoints || []).forEach((ep, i) => {
+    const o = document.createElement("option");
+    o.value = ep.ip;
+    o.textContent = `${ep.ip}:${ep.port} · ${ep.iface}`;
+    if (i === 0) o.selected = true;
+    sel.appendChild(o);
+  });
+  try {
+    const cfg = await api("/api/console/settings");
+    $("set-relay").value = cfg.relayURL || "";
+    $("set-key").value = cfg.relayKey || "";
+  } catch {}
+}
+
+$("btn-settings-save").onclick = async () => {
+  const url = $("set-relay").value.trim();
+  const key = $("set-key").value.trim();
+  if ((url === "") !== (key === "")) {
+    toast("地址和密钥要么都填，要么都留空");
+    return;
+  }
+  try {
+    await api("/api/console/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        relayURL: url,
+        relayKey: key,
+        ip: $("set-net").value,
+      }),
+    });
+    $("mask-settings").classList.remove("show");
+    toast("已保存，手机请重新扫码");
+    refresh();
+  } catch (e) { toast(e.message); }
+};
+
+$("btn-settings-close").onclick = () => $("mask-settings").classList.remove("show");
+
+// ---------- 顶部按钮 ----------
+$("btn-settings").onclick = openSettings;
+
+$("btn-copy-token").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(state.token);
+    toast("配对码已复制");
+  } catch { toast("复制失败"); }
+};
+
+$("btn-rotate").onclick = async () => {
+  if (!confirm("重新生成后，已配对的手机需要重新扫码。继续？")) return;
+  try {
+    await api("/api/console/rotate", { method: "POST" });
+    toast("配对码已重置");
+    refresh();
+  } catch (e) { toast(e.message); }
+};
+
+$("tile-file").onclick = pickFiles;
+$("tile-text").onclick = openTextPanel;
+$("tile-clip").onclick = sendClipboard;
+
+// 点遮罩关闭
+document.querySelectorAll(".mask").forEach((m) => {
+  m.addEventListener("click", (e) => {
+    if (e.target === m) m.classList.remove("show");
+  });
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    document.querySelectorAll(".mask.show").forEach((m) => m.classList.remove("show"));
+    hideCtx();
+  }
+});
+
+// 拖拽上传
+document.addEventListener("dragover", (e) => e.preventDefault());
+document.addEventListener("drop", (e) => {
+  e.preventDefault();
+  if (e.dataTransfer?.files?.length) uploadFiles([...e.dataTransfer.files]);
+});
+
+refresh();
+setInterval(refresh, 2000);
+
+// 允许 #text / #settings 直接打开对应面板
+if (location.hash === "#text") openTextPanel();
+if (location.hash === "#settings") openSettings();
+</script>
+</body>
+</html>

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const appVersion = "0.1.0"
+const appVersion = "0.7.0"
 
 // State 持久化在 data/state.json，保证重启后二维码里的配对码不变。
 type State struct {

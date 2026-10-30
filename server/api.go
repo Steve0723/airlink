@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os/exec"
 	"net/url"
 	"os"
 	"strconv"
@@ -26,6 +27,7 @@ type Server struct {
 	mu         sync.RWMutex // 保护 state.Token / PreferredIP
 	cfg        string       // state.json 路径
 	mobilePage []byte       // /j 页面，给手机浏览器用
+	uiPage     []byte       // /ui 桌面端页面
 
 	// onClip 由窗口注入：手机发来剪贴板时回调，用于自动复制到 Windows 剪贴板。
 	onClip func(ClipItem)
@@ -440,6 +442,93 @@ func (s *Server) handlePushLocalClip(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "clip": item})
 }
 
+// ---------- 控制台：文件与设置 ----------
+
+func (s *Server) handleConsoleUI(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(s.uiPage)
+}
+
+func (s *Server) handleConsoleDeleteFile(w http.ResponseWriter, r *http.Request) {
+	if err := s.store.Delete(r.PathValue("id")); err != nil {
+		writeErr(w, http.StatusNotFound, "文件不存在")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleConsoleOpenFile(w http.ResponseWriter, r *http.Request) {
+	_, p, err := s.store.Find(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "文件不存在")
+		return
+	}
+	if err := exec.Command("explorer", p).Start(); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleConsoleRevealFile(w http.ResponseWriter, r *http.Request) {
+	_, p, err := s.store.Find(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "文件不存在")
+		return
+	}
+	if err := exec.Command("explorer", "/select,"+p).Start(); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleConsoleClips(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"clips": s.store.Clips()})
+}
+
+func (s *Server) handleConsoleDeleteClip(w http.ResponseWriter, r *http.Request) {
+	if !s.store.DeleteClip(r.PathValue("id")) {
+		writeErr(w, http.StatusNotFound, "记录不存在")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleConsoleGetSettings(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{
+		"relayURL": s.relayURL(),
+		"relayKey": s.relayKey(),
+	})
+}
+
+func (s *Server) handleConsoleSetSettings(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		RelayURL string `json:"relayURL"`
+		RelayKey string `json:"relayKey"`
+		IP       string `json:"ip"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, "参数错误")
+		return
+	}
+	url := strings.TrimSpace(body.RelayURL)
+	key := strings.TrimSpace(body.RelayKey)
+	if (url == "") != (key == "") {
+		writeErr(w, http.StatusBadRequest, "地址和密钥要么都填，要么都留空")
+		return
+	}
+	if url != "" && !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		writeErr(w, http.StatusBadRequest, "地址要以 http:// 或 https:// 开头")
+		return
+	}
+	s.setRelay(url, key)
+	if ip := strings.TrimSpace(body.IP); ip != "" {
+		s.setPreferredIP(ip)
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 // ---------- 控制台 ----------
 
 type consoleState struct {
@@ -573,6 +662,14 @@ func (s *Server) routes(static http.Handler) http.Handler {
 	mux.HandleFunc("DELETE /api/v1/clipboard/{id}", s.requireToken(s.handleDeleteClip))
 	mux.HandleFunc("DELETE /api/v1/clipboard", s.requireToken(s.handleClearClips))
 	mux.HandleFunc("POST /api/console/clipboard", s.loopbackOnly(s.handlePushLocalClip))
+	mux.HandleFunc("GET /ui", s.handleConsoleUI)
+	mux.HandleFunc("GET /api/console/clips", s.loopbackOnly(s.handleConsoleClips))
+	mux.HandleFunc("DELETE /api/console/clips/{id}", s.loopbackOnly(s.handleConsoleDeleteClip))
+	mux.HandleFunc("DELETE /api/console/files/{id}", s.loopbackOnly(s.handleConsoleDeleteFile))
+	mux.HandleFunc("POST /api/console/files/{id}/open", s.loopbackOnly(s.handleConsoleOpenFile))
+	mux.HandleFunc("POST /api/console/files/{id}/reveal", s.loopbackOnly(s.handleConsoleRevealFile))
+	mux.HandleFunc("GET /api/console/settings", s.loopbackOnly(s.handleConsoleGetSettings))
+	mux.HandleFunc("POST /api/console/settings", s.loopbackOnly(s.handleConsoleSetSettings))
 
 	mux.HandleFunc("GET /api/console/state", s.loopbackOnly(s.handleConsoleState))
 	mux.HandleFunc("GET /api/console/qr.png", s.loopbackOnly(s.handleConsoleQR))

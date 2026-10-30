@@ -10,12 +10,14 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/lxn/walk"
 	qrcode "github.com/skip2/go-qrcode"
 )
 
@@ -91,6 +93,10 @@ func main() {
 	if err != nil {
 		fatal("手机页面缺失: %v", err)
 	}
+	uiPage, err := fs.ReadFile(sub, "ui.html")
+	if err != nil {
+		fatal("桌面页面缺失: %v", err)
+	}
 
 	srv := &Server{
 		store:      store,
@@ -98,8 +104,16 @@ func main() {
 		port:       *port,
 		cfg:        statePath,
 		mobilePage: mobilePage,
+		uiPage:     uiPage,
 	}
 	handler := srv.routes(http.FileServer(http.FS(sub)))
+
+	// 端口已被占用说明已经有一个 AirLink 在跑，直接把窗口叫到前台就退出，
+	// 免得用户双击两次开出一堆后台进程。
+	if !*noGUI && portInUse(*port) {
+		openConsoleWindow(*port)
+		return
+	}
 
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
@@ -115,6 +129,14 @@ func main() {
 			fatal("服务异常退出: %v", err)
 		}
 	}()
+
+	// 手机发来的文字直接写进 Windows 剪贴板，用户不用再点一次复制。
+	// 写失败不影响主流程——记录本身已经存下来了。
+	srv.onClip = func(item ClipItem) {
+		if err := walk.Clipboard().SetText(item.Content); err != nil {
+			verbosef("写入剪贴板失败: %v", err)
+		}
+	}
 
 	srv.startRelayPoller()
 
@@ -139,7 +161,46 @@ func main() {
 		waitSignal()
 		return
 	}
-	runGUI(srv)
+	openConsoleWindow(*port)
+	runTray(srv, *port)
+}
+
+// portInUse 判断本地端口是否已经被监听。
+func portInUse(port int) bool {
+	c, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 300*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = c.Close()
+	return true
+}
+
+// openConsoleWindow 用 Edge 的应用模式打开界面。
+// --app 模式没有地址栏和标签页，看起来就是一个独立窗口；
+// 界面本身是 HTML，所以圆角、卡片、配色都能做到位，这是 Walk 给不了的。
+func openConsoleWindow(port int) {
+	url := fmt.Sprintf("http://127.0.0.1:%d/ui", port)
+
+	candidates := []string{
+		filepath.Join(os.Getenv("ProgramFiles(x86)"), `Microsoft\Edge\Application\msedge.exe`),
+		filepath.Join(os.Getenv("ProgramFiles"), `Microsoft\Edge\Application\msedge.exe`),
+		filepath.Join(os.Getenv("LOCALAPPDATA"), `Microsoft\Edge\Application\msedge.exe`),
+	}
+	for _, exe := range candidates {
+		if exe == "" {
+			continue
+		}
+		if _, err := os.Stat(exe); err != nil {
+			continue
+		}
+		cmd := exec.Command(exe, "--app="+url, "--window-size=920,780")
+		if err := cmd.Start(); err == nil {
+			return
+		}
+	}
+
+	// 没有 Edge 就退回系统默认浏览器，功能一样，只是多了地址栏。
+	_ = exec.Command("explorer", url).Start()
 }
 
 // ensureIcon 把内嵌图标落到数据目录，供窗口和托盘加载。
