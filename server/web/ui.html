@@ -99,15 +99,9 @@
     border-radius: var(--radius-lg);
     padding: 18px 22px;
     display: flex;
-    flex-direction: column;
-    gap: 14px;
-    margin-bottom: 20px;
-  }
-
-  .pair-top {
-    display: flex;
     align-items: center;
-    gap: 22px;
+    gap: 24px;
+    margin-bottom: 20px;
   }
 
   .qr {
@@ -181,21 +175,23 @@
   .tiles {
     display: flex;
     gap: 8px;
+    flex-shrink: 0;
   }
 
   .tile {
-    flex: 1;
-    height: 60px;
+    width: 96px;
+    height: 64px;
     border: none;
     border-radius: var(--radius-sm);
     background: var(--tile);
     cursor: pointer;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 5px;
     font-family: inherit;
-    font-size: 13.5px;
+    font-size: 12.5px;
     color: var(--accent);
     transition: background .14s, transform .08s;
   }
@@ -499,17 +495,15 @@
   </header>
 
   <section class="pair">
-    <div class="pair-top">
-      <img class="qr" id="qr" alt="配对二维码">
-      <div class="pair-info">
-        <h2>手机扫码配对</h2>
-        <div class="pair-row">
-          配对码 <span class="token" id="token">--------</span>
-          <button class="link-btn" id="btn-copy-token">复制</button>
-          <button class="link-btn" id="btn-rotate">重置</button>
-        </div>
-        <div class="pair-row" id="pair-hint">手机和电脑需要连同一个 WiFi</div>
+    <img class="qr" id="qr" alt="配对二维码">
+    <div class="pair-info">
+      <h2>手机扫码配对</h2>
+      <div class="pair-row">
+        配对码 <span class="token" id="token">--------</span>
+        <button class="link-btn" id="btn-copy-token">复制</button>
+        <button class="link-btn" id="btn-rotate">重置</button>
       </div>
+      <div class="pair-row" id="pair-hint">手机和电脑需要连同一个 WiFi</div>
     </div>
     <div class="tiles">
         <button class="tile" id="tile-file">
