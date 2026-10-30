@@ -44,6 +44,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -533,30 +536,55 @@ private fun HomeScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp),
-                    shape = RoundedCornerShape(12.dp),
+                        .height(46.dp),
+                    shape = RoundedCornerShape(23.dp),
                 ) { Text("发送手机剪贴板", fontSize = 14.sp) }
 
                 Spacer(Modifier.height(10.dp))
 
+                // 输入框做成和「发送」按钮同款胶囊：44 高、22 圆角。
+                // 默认的 OutlinedTextField 是 Material 那套 56 高的描边盒子，
+                // 在这个界面里显得又大又方。
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = textInput,
-                        onValueChange = { textInput = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("或手输一段文字", fontSize = 13.sp) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = {
-                            sendClipboard(scope, device, textInput) { textInput = "" }
-                        }),
-                    )
+                    Surface(
+                        shape = RoundedCornerShape(22.dp),
+                        color = Color(0xFFF4F6F5),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, LineColor),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.CenterStart,
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                        ) {
+                            BasicTextField(
+                                value = textInput,
+                                onValueChange = { textInput = it },
+                                singleLine = true,
+                                textStyle = TextStyle(fontSize = 14.sp, color = Color(0xFF171B19)),
+                                cursorBrush = SolidColor(Accent),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                                keyboardActions = KeyboardActions(onSend = {
+                                    sendClipboard(scope, device, textInput) { textInput = "" }
+                                }),
+                                decorationBox = { inner ->
+                                    if (textInput.isEmpty()) {
+                                        Text("或手输一段文字", fontSize = 13.sp, color = Muted)
+                                    }
+                                    inner()
+                                },
+                            )
+                        }
+                    }
                     Spacer(Modifier.width(8.dp))
                     Button(
                         onClick = { sendClipboard(scope, device, textInput) { textInput = "" } },
-                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.height(44.dp),
+                        shape = RoundedCornerShape(22.dp),
+                        contentPadding = PaddingValues(horizontal = 22.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Accent),
-                    ) { Text("发送") }
+                    ) { Text("发送", fontSize = 14.sp) }
                 }
             }
         }
