@@ -446,7 +446,23 @@ func (s *Server) handlePushLocalClip(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleConsoleUI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// 界面随版本变化，不能让 Edge 拿缓存，否则改完看不到效果
+	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(s.uiPage)
+}
+
+// handleFavicon 提供窗口图标。
+// Edge 的 --app 模式会用网页 favicon 当窗口和任务栏图标，
+// 不给的话任务栏上显示的就是 Edge 自己的图标。
+func (s *Server) handleFavicon(w http.ResponseWriter, r *http.Request) {
+	data, err := uiAssets.ReadFile("icon.ico")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "image/x-icon")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_, _ = w.Write(data)
 }
 
 func (s *Server) handleConsoleDeleteFile(w http.ResponseWriter, r *http.Request) {
@@ -663,6 +679,7 @@ func (s *Server) routes(static http.Handler) http.Handler {
 	mux.HandleFunc("DELETE /api/v1/clipboard", s.requireToken(s.handleClearClips))
 	mux.HandleFunc("POST /api/console/clipboard", s.loopbackOnly(s.handlePushLocalClip))
 	mux.HandleFunc("GET /ui", s.handleConsoleUI)
+	mux.HandleFunc("GET /favicon.ico", s.handleFavicon)
 	mux.HandleFunc("GET /api/console/clips", s.loopbackOnly(s.handleConsoleClips))
 	mux.HandleFunc("DELETE /api/console/clips/{id}", s.loopbackOnly(s.handleConsoleDeleteClip))
 	mux.HandleFunc("DELETE /api/console/files/{id}", s.loopbackOnly(s.handleConsoleDeleteFile))

@@ -58,6 +58,7 @@ func humanSize(n int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
+//go:embed icon.ico
 //go:embed assets/*.png
 var uiAssets embed.FS
 

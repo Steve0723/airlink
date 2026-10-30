@@ -210,6 +210,8 @@ check("重复登记不产生两条", len([p for p in phones if p["id"] == "phone
 print("\n[11] 桌面端页面与控制台接口")
 s, body, _ = req("GET", "/ui", raw=True)
 check("桌面页面可访问", s == 200 and b"<html" in body.lower(), s)
+s, body, _ = req("GET", "/favicon.ico", raw=True)
+check("窗口图标可访问", s == 200 and body[:4] == b"\x00\x00\x01\x00", body[:8])
 
 s, j, _ = req("POST", "/api/console/upload?name=" + urllib.parse.quote("控制台测试.txt"), b"console")
 fid = j["file"]["id"]
