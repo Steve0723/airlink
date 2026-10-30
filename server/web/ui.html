@@ -99,9 +99,15 @@
     border-radius: var(--radius-lg);
     padding: 18px 22px;
     display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+
+  .pair-top {
+    display: flex;
     align-items: center;
     gap: 22px;
-    margin-bottom: 20px;
   }
 
   .qr {
@@ -167,41 +173,36 @@
   .sect .spacer { flex: 1; }
 
   /* ---------- 卡片按钮 ---------- */
-  .pair-body {
+  .pair-info {
     flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
     min-width: 0;
   }
 
   .tiles {
     display: flex;
     gap: 8px;
-    justify-content: flex-end;
   }
 
   .tile {
-    width: 86px;
-    height: 76px;
+    flex: 1;
+    height: 60px;
     border: none;
-    border-radius: var(--radius);
+    border-radius: var(--radius-sm);
     background: var(--tile);
     cursor: pointer;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: 8px;
     font-family: inherit;
-    font-size: 12.5px;
+    font-size: 13.5px;
     color: var(--accent);
     transition: background .14s, transform .08s;
   }
 
   .tile:hover { background: var(--tile-hover); }
   .tile:active { transform: scale(.975); }
-  .tile svg { width: 18px; height: 18px; stroke: var(--accent); }
+  .tile svg { width: 20px; height: 20px; stroke: var(--accent); }
 
   /* ---------- 文件列表 ---------- */
   .files {
@@ -498,9 +499,9 @@
   </header>
 
   <section class="pair">
-    <img class="qr" id="qr" alt="配对二维码">
-    <div class="pair-body">
-      <div>
+    <div class="pair-top">
+      <img class="qr" id="qr" alt="配对二维码">
+      <div class="pair-info">
         <h2>手机扫码配对</h2>
         <div class="pair-row">
           配对码 <span class="token" id="token">--------</span>
@@ -509,7 +510,8 @@
         </div>
         <div class="pair-row" id="pair-hint">手机和电脑需要连同一个 WiFi</div>
       </div>
-      <div class="tiles">
+    </div>
+    <div class="tiles">
         <button class="tile" id="tile-file">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>
@@ -530,7 +532,6 @@
           </svg>
           剪贴板
         </button>
-      </div>
     </div>
   </section>
 
