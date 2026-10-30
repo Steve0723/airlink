@@ -37,7 +37,10 @@
   .app {
     max-width: 880px;
     margin: 0 auto;
-    padding: 18px 20px 28px;
+    padding: 18px 20px 24px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
   }
 
   /* ---------- 顶部 ---------- */
@@ -98,7 +101,7 @@
     display: flex;
     align-items: center;
     gap: 22px;
-    margin-bottom: 22px;
+    margin-bottom: 20px;
   }
 
   .qr {
@@ -164,15 +167,23 @@
   .sect .spacer { flex: 1; }
 
   /* ---------- 卡片按钮 ---------- */
+  .pair-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+  }
+
   .tiles {
     display: flex;
-    gap: 10px;
-    margin-bottom: 24px;
+    gap: 8px;
+    justify-content: flex-end;
   }
 
   .tile {
-    width: 110px;
-    height: 96px;
+    width: 86px;
+    height: 76px;
     border: none;
     border-radius: var(--radius);
     background: var(--tile);
@@ -181,16 +192,16 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 6px;
     font-family: inherit;
-    font-size: 13.5px;
+    font-size: 12.5px;
     color: var(--accent);
     transition: background .14s, transform .08s;
   }
 
   .tile:hover { background: var(--tile-hover); }
   .tile:active { transform: scale(.975); }
-  .tile svg { width: 22px; height: 22px; stroke: var(--accent); }
+  .tile svg { width: 18px; height: 18px; stroke: var(--accent); }
 
   /* ---------- 文件列表 ---------- */
   .files {
@@ -199,6 +210,7 @@
     border-radius: var(--radius-lg);
     padding: 8px;
     min-height: 120px;
+    flex: 1;
   }
 
   .file {
@@ -487,40 +499,40 @@
 
   <section class="pair">
     <img class="qr" id="qr" alt="配对二维码">
-    <div>
-      <h2>手机扫码配对</h2>
-      <div class="pair-row">
-        配对码 <span class="token" id="token">--------</span>
-        <button class="link-btn" id="btn-copy-token">复制</button>
-        <button class="link-btn" id="btn-rotate">重置</button>
+    <div class="pair-body">
+      <div>
+        <h2>手机扫码配对</h2>
+        <div class="pair-row">
+          配对码 <span class="token" id="token">--------</span>
+          <button class="link-btn" id="btn-copy-token">复制</button>
+          <button class="link-btn" id="btn-rotate">重置</button>
+        </div>
+        <div class="pair-row" id="pair-hint">手机和电脑需要连同一个 WiFi</div>
       </div>
-      <div class="pair-row" id="pair-hint">手机和电脑需要连同一个 WiFi</div>
+      <div class="tiles">
+        <button class="tile" id="tile-file">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>
+            <path d="M14 3v5h5"/>
+          </svg>
+          文件
+        </button>
+        <button class="tile" id="tile-text">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round">
+            <path d="M4 8h16M4 13h16M4 18h10"/>
+          </svg>
+          文本
+        </button>
+        <button class="tile" id="tile-clip">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="6" y="5" width="12" height="16" rx="2"/>
+            <path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/>
+          </svg>
+          剪贴板
+        </button>
+      </div>
     </div>
   </section>
-
-  <h3 class="sect">选择</h3>
-  <div class="tiles">
-    <button class="tile" id="tile-file">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>
-        <path d="M14 3v5h5"/>
-      </svg>
-      文件
-    </button>
-    <button class="tile" id="tile-text">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round">
-        <path d="M4 8h16M4 13h16M4 18h10"/>
-      </svg>
-      文本
-    </button>
-    <button class="tile" id="tile-clip">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="6" y="5" width="12" height="16" rx="2"/>
-        <path d="M9 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/>
-      </svg>
-      剪贴板
-    </button>
-  </div>
 
   <h3 class="sect">
     收到的文件
