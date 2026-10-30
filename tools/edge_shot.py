@@ -116,7 +116,11 @@ def grab(hwnd, rect, out_path):
 def main():
     url = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:6027/ui"
     out = sys.argv[2] if len(sys.argv) > 2 else "ui-shot.png"
-    width = sys.argv[3] if len(sys.argv) > 3 else "920"
+    size = sys.argv[3] if len(sys.argv) > 3 else "920x780"
+    if "x" in size:
+        width, height = size.split("x")
+    else:
+        width, height = size, "780"
 
     exe = find_edge()
     if not exe:
@@ -124,7 +128,7 @@ def main():
 
     before = {h[0] for h in find_window()}
     subprocess.Popen(
-        [exe, "--app=" + url, f"--window-size={width},780"],
+        [exe, "--app=" + url, f"--window-size={width},{height}"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
 
@@ -141,8 +145,27 @@ def main():
     if not hwnd:
         sys.exit("没等到窗口")
 
-    time.sleep(1.2)  # 等页面渲染完
     h, title, rect = hwnd
+
+    # 按 DPI 换算成物理像素，强制窗口尺寸
+    dpi = u.GetDpiForWindow(h) if hasattr(u, "GetDpiForWindow") else 96
+    try:
+        factor = dpi / 96.0
+    except Exception:
+        factor = 1.0
+    if factor <= 0:
+        factor = 1.0
+
+    target_w = int(int(width) * factor)
+    target_h = int(int(height) * factor)
+    SWP_NOZORDER = 0x0004
+    u.SetWindowPos(h, 0, 0, 0, target_w, target_h, SWP_NOZORDER)
+
+    time.sleep(1.5)  # 等页面重新布局和渲染
+
+    r2 = RECT()
+    u.GetWindowRect(h, ctypes.byref(r2))
+    rect = r2
     w, ht = grab(h, rect, out)
     print(f"saved {out} {w}x{ht}")
 
