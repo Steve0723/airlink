@@ -168,10 +168,20 @@ chmod +x AirLink-Relay-linux-amd64
 
 **方式二：Docker（推荐，自带 HTTPS）**
 
-一台有公网 IP 的服务器，域名 A 记录指过来：
+需要 `relay/` 这个目录（含 `docker-compose.yml`、`Caddyfile`、`.env.example`）。
+没克隆仓库的话，先只取这个目录：
 
 ```bash
-cd relay
+git clone --depth 1 https://github.com/Steve0723/airlink.git
+cd airlink/relay
+```
+
+或者在 GitHub 上打开 [`relay/`](https://github.com/Steve0723/airlink/tree/main/relay)
+逐个下载那四个文件，放在同一个目录里。
+
+然后在一台有公网 IP 的服务器上，域名 A 记录指过来：
+
+```bash
 cp .env.example .env      # 填域名，密钥用 openssl rand -hex 24 生成
 docker compose up -d      # Caddy 自动申请 HTTPS
 curl https://你的域名/healthz
