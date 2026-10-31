@@ -15,6 +15,8 @@ import (
 	"gioui.org/app"
 	"gioui.org/f32"
 	"gioui.org/font"
+	"gioui.org/io/event"
+	"gioui.org/io/pointer"
 	"gioui.org/io/system"
 	"gioui.org/font/opentype"
 	"gioui.org/gpu/headless"
@@ -43,6 +45,13 @@ var (
 // debugLayout 打开后会把卡片尺寸打到 stderr，排查布局问题时用。
 var debugLayout = os.Getenv("AIRLINK_DEBUG_LAYOUT") != ""
 
+// rowState 保存文件列表一行的交互状态。
+// 这里没用 widget.Clickable：右键和左键要在同一个输入区域里区分，
+// 而 Clickable 会独占 pointer 事件，右键拿不到。
+type rowState struct {
+	hovered bool
+}
+
 // mainUI 供托盘和单实例检测唤起窗口用。
 var mainUI *ui
 
@@ -61,12 +70,17 @@ type ui struct {
 	// 每帧从 store 读一次文件列表，用文件数 + ID 判断是否需要换数据
 	files    []FileEntry
 	fileKey  string
-	fileRows []widget.Clickable
+	fileRows []rowState
 	selected int // 当前选中的文件下标，-1 表示没选
 
 	list layout.List
 
 	btnAddFile, btnOpen, btnReveal, btnDeleteFile widget.Clickable
+
+	// 右键菜单
+	ctxMenu                          contextMenu
+	ctxOpen, ctxReveal, ctxCopyName  widget.Clickable
+	ctxDelete                        widget.Clickable
 
 	// ---------- 面板 ----------
 	showText     bool
@@ -197,11 +211,16 @@ func snapshotUI(srv *Server, w, h int, scale float32, path, panel string) error 
 	u := &ui{srv: srv, th: th, selected: -1}
 	u.list.Axis = layout.Vertical
 	u.clipList.Axis = layout.Vertical
+	u.refreshFiles()
 	switch panel {
 	case "text":
 		u.showText = true
 	case "settings":
 		u.showSettings = true
+	case "menu":
+		// 右键菜单需要交互才出现，快照时手动打开方便检查样式
+		u.selected = 0
+		u.ctxMenu = contextMenu{visible: true, row: 0}
 	}
 
 	var ops op.Ops
@@ -286,41 +305,49 @@ func (u *ui) layout(gtx layout.Context) layout.Dimensions {
 	return dims
 }
 
+// modalOpen 有浮层挡着时，主界面的按钮和列表都不该响应点击。
+// 面板只是「画」在上面，不会自动拦住事件，得自己判断。
+func (u *ui) modalOpen() bool {
+	return u.showText || u.showSettings
+}
+
 // handleClicks 统一处理所有按钮，避免逻辑散在布局代码里。
 func (u *ui) handleClicks(gtx layout.Context) {
-	if u.btnCopy.Clicked(gtx) {
-		_ = setClipboard(u.srv.token())
-	}
-	if u.btnReset.Clicked(gtx) {
-		u.srv.rotateToken()
-	}
+	if !u.modalOpen() {
+		if u.btnCopy.Clicked(gtx) {
+			_ = setClipboard(u.srv.token())
+		}
+		if u.btnReset.Clicked(gtx) {
+			u.srv.rotateToken()
+		}
 
-	// 三个入口
-	if u.btnFile.Clicked(gtx) {
-		u.pickFiles()
-	}
-	if u.btnText.Clicked(gtx) {
-		u.showText = true
-	}
-	if u.btnClip.Clicked(gtx) {
-		u.pushClipboard()
-	}
-	if u.btnSettings.Clicked(gtx) {
-		u.openSettings()
-	}
+		// 四个入口
+		if u.btnFile.Clicked(gtx) {
+			u.pickFiles()
+		}
+		if u.btnText.Clicked(gtx) {
+			u.showText = true
+		}
+		if u.btnClip.Clicked(gtx) {
+			u.pushClipboard()
+		}
+		if u.btnSettings.Clicked(gtx) {
+			u.openSettings()
+		}
 
-	// 文件操作
-	if u.btnAddFile.Clicked(gtx) {
-		u.pickFiles()
-	}
-	if u.btnOpen.Clicked(gtx) {
-		u.openSelected()
-	}
-	if u.btnReveal.Clicked(gtx) {
-		u.revealSelected()
-	}
-	if u.btnDeleteFile.Clicked(gtx) {
-		u.deleteSelected()
+		// 文件操作
+		if u.btnAddFile.Clicked(gtx) {
+			u.pickFiles()
+		}
+		if u.btnOpen.Clicked(gtx) {
+			u.openSelected()
+		}
+		if u.btnReveal.Clicked(gtx) {
+			u.revealSelected()
+		}
+		if u.btnDeleteFile.Clicked(gtx) {
+			u.deleteSelected()
+		}
 	}
 
 	// 文本面板内的按钮
@@ -697,7 +724,9 @@ func (u *ui) filesCard(gtx layout.Context) layout.Dimensions {
 	u.refreshFiles()
 
 	return u.card(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		return layout.Stack{Alignment: layout.NE}.Layout(gtx,
+			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -762,6 +791,15 @@ func (u *ui) filesCard(gtx layout.Context) layout.Dimensions {
 					}),
 				)
 			}),
+				)
+			}),
+			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+				if !u.ctxMenu.visible {
+					return layout.Dimensions{}
+				}
+				// 菜单落在文件卡片内右上角，避开顶部那一排按钮
+				return layout.Inset{Top: unit.Dp(44), Right: unit.Dp(4)}.Layout(gtx, u.contextMenuWidget)
+			}),
 		)
 	})
 }
@@ -776,61 +814,94 @@ func (u *ui) headerText(gtx layout.Context, text string) layout.Dimensions {
 func (u *ui) fileRow(gtx layout.Context, i int, f FileEntry) layout.Dimensions {
 	row := &u.fileRows[i]
 
-	// Clicked() 内部会自己调一次 update，而 Layout() 也会调。
-	// 所以必须在 Layout 之前调用 —— 放进 Layout 的回调里就永远拿不到点击。
-	if row.Clicked(gtx) {
-		u.selected = i
+	// 面板打开时不响应列表上的任何指针事件
+	blocked := u.modalOpen()
+
+	// 处理指针事件。InputOp 在上一帧末尾注册，这里读到的是那之后发生的事件。
+	// 左键选中，右键弹出菜单。
+	for !blocked {
+		ev, ok := gtx.Event(pointer.Filter{
+			Target: row,
+			Kinds:  pointer.Press | pointer.Enter | pointer.Leave,
+		})
+		if !ok {
+			break
+		}
+		e, ok := ev.(pointer.Event)
+		if !ok {
+			continue
+		}
+		switch e.Kind {
+		case pointer.Press:
+			switch e.Buttons {
+			case pointer.ButtonSecondary:
+				u.selected = i
+				u.ctxMenu = contextMenu{visible: true, row: i}
+			case pointer.ButtonPrimary:
+				u.selected = i
+				u.ctxMenu.visible = false
+			}
+		case pointer.Enter:
+			row.hovered = true
+		case pointer.Leave:
+			row.hovered = false
+		}
 	}
+
 	selected := u.selected == i
 
-	return row.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		m := op.Record(gtx.Ops)
-		dims := layout.Inset{
-			Top: unit.Dp(8), Bottom: unit.Dp(8),
-			Left: unit.Dp(8), Right: unit.Dp(8),
-		}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					l := material.Body2(u.th, f.Name)
-					l.Color = uiInk
-					l.MaxLines = 1
-					return l.Layout(gtx)
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(90)), gtx.Dp(unit.Dp(22))))
-					l := material.Body2(u.th, humanSize(f.Size))
-					l.Color = uiMuted
-					return l.Layout(gtx)
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(120)), gtx.Dp(unit.Dp(22))))
-					l := material.Body2(u.th, f.ModTime.Format("01-02 15:04"))
-					l.Color = uiMuted
-					return l.Layout(gtx)
-				}),
-			)
-		})
-		call := m.Stop()
-
-		// 选中和悬停时铺一层底色，鼠标移过去能看出哪行被选中
-		if selected || row.Hovered() || row.Pressed() {
-			bg := color.NRGBA{R: 0xF2, G: 0xF7, B: 0xF4, A: 0xFF}
-			if selected {
-				bg = color.NRGBA{R: 0xE6, G: 0xF3, B: 0xED, A: 0xFF}
-			}
-			if row.Pressed() {
-				bg = color.NRGBA{R: 0xDD, G: 0xEB, B: 0xE4, A: 0xFF}
-			}
-			r := gtx.Dp(unit.Dp(8))
-			rr := clip.RRect{
-				Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y),
-				NW:   r, NE: r, SW: r, SE: r,
-			}
-			paint.FillShape(gtx.Ops, bg, rr.Op(gtx.Ops))
-		}
-		call.Add(gtx.Ops)
-		return dims
+	m := op.Record(gtx.Ops)
+	dims := layout.Inset{
+		Top: unit.Dp(8), Bottom: unit.Dp(8),
+		Left: unit.Dp(8), Right: unit.Dp(8),
+	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				l := material.Body2(u.th, f.Name)
+				l.Color = uiInk
+				l.MaxLines = 1
+				return l.Layout(gtx)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(90)), gtx.Dp(unit.Dp(22))))
+				l := material.Body2(u.th, humanSize(f.Size))
+				l.Color = uiMuted
+				return l.Layout(gtx)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(120)), gtx.Dp(unit.Dp(22))))
+				l := material.Body2(u.th, f.ModTime.Format("01-02 15:04"))
+				l.Color = uiMuted
+				return l.Layout(gtx)
+			}),
+		)
 	})
+	call := m.Stop()
+
+	// 选中 / 悬停时铺一层圆角底色
+	if selected || row.hovered {
+		bg := color.NRGBA{R: 0xF2, G: 0xF7, B: 0xF4, A: 0xFF}
+		if selected {
+			bg = color.NRGBA{R: 0xE6, G: 0xF3, B: 0xED, A: 0xFF}
+		}
+		r := gtx.Dp(unit.Dp(8))
+		rr := clip.RRect{
+			Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y),
+			NW:   r, NE: r, SW: r, SE: r,
+		}
+		paint.FillShape(gtx.Ops, bg, rr.Op(gtx.Ops))
+	}
+	call.Add(gtx.Ops)
+
+	// 注册本行的输入区域，供下一帧读事件。
+	// 面板打开时不注册，免得底下的行还在响应悬停。
+	if !blocked {
+		stack := clip.Rect{Max: dims.Size}.Push(gtx.Ops)
+		event.Op(gtx.Ops, row)
+		stack.Pop()
+	}
+
+	return dims
 }
 
 // refreshFiles 只在文件集合变化时才重建切片，避免每帧分配。
@@ -845,7 +916,7 @@ func (u *ui) refreshFiles() {
 	}
 	u.fileKey = key
 	u.files = files
-	u.fileRows = make([]widget.Clickable, len(files))
+	u.fileRows = make([]rowState, len(files))
 	if u.selected >= len(files) {
 		u.selected = -1
 	}
