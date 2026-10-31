@@ -18,6 +18,7 @@ const fmtTime = (iso) => {
 };
 
 let tipTimer = null;
+let clipKind = "text"; // text=文字互传 clip=剪贴板
 function tip(msg) {
   const el = $("tip");
   el.textContent = msg;
@@ -152,7 +153,7 @@ async function refresh() {
   });
 
   try {
-    const d = await api("GET", "/api/v1/clipboard");
+    const d = await api("GET", `/api/v1/clipboard?kind=${clipKind}`);
     const list = $("texts");
     list.innerHTML = "";
     (d.clips || []).slice(0, 8).forEach((item) => {
@@ -177,6 +178,15 @@ async function refresh() {
     });
   } catch {}
 }
+
+// 标签切换
+document.querySelectorAll(".tab").forEach((t) => {
+  t.onclick = () => {
+    clipKind = t.dataset.kind;
+    document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("active", x === t));
+    refresh();
+  };
+});
 
 // 删除一条记录
 async function delClip(id) {

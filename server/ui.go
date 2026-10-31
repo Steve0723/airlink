@@ -95,6 +95,10 @@ type ui struct {
 	// 最近记录条数选项
 	limitChips [5]widget.Clickable
 
+	// 文本面板的标签页：0=文字互传 1=剪贴板
+	clipTab          int
+	tabText, tabClip widget.Clickable
+
 	// 设置面板中间的滚动区
 	settingsScroll layout.List
 

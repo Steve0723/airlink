@@ -137,7 +137,17 @@ func (u *ui) textPanel(gtx layout.Context) {
 						layout.Rigid(u.pillButton(&u.btnSend, "发送", true)),
 					)
 				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(14)}.Layout),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(12)}.Layout),
+
+				// 分类标签：文字互传 / 剪贴板
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(u.tabButton(&u.tabText, "文字互传", 0)),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
+						layout.Rigid(u.tabButton(&u.tabClip, "剪贴板", 1)),
+					)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 
 				// 记录标题行
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -182,6 +192,47 @@ func (u *ui) textPanel(gtx layout.Context) {
 			)
 		})
 	})
+}
+
+// tabButton 画一个标签页按钮，点中就切到对应分类
+func (u *ui) tabButton(c *widget.Clickable, label string, idx int) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		if c.Clicked(gtx) {
+			u.clipTab = idx
+		}
+		active := u.clipTab == idx
+
+		return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			m := op.Record(gtx.Ops)
+			dims := layout.Inset{
+				Top: unit.Dp(5), Bottom: unit.Dp(5),
+				Left: unit.Dp(12), Right: unit.Dp(12),
+			}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				l := material.Body2(u.th, label)
+				l.TextSize = unit.Sp(12)
+				if active {
+					l.Color = color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF}
+				} else {
+					l.Color = uiMuted
+				}
+				return l.Layout(gtx)
+			})
+			call := m.Stop()
+
+			bg := color.NRGBA{R: 0xEC, G: 0xEF, B: 0xED, A: 0xFF}
+			if active {
+				bg = uiGreen
+			}
+			r := dims.Size.Y / 2
+			rr := clip.RRect{
+				Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y),
+				NW:   r, NE: r, SW: r, SE: r,
+			}
+			paint.FillShape(gtx.Ops, bg, rr.Op(gtx.Ops))
+			call.Add(gtx.Ops)
+			return dims
+		})
+	}
 }
 
 func (u *ui) clipRowWidget(gtx layout.Context, i int) layout.Dimensions {
@@ -254,7 +305,11 @@ func (u *ui) clipRowWidget(gtx layout.Context, i int) layout.Dimensions {
 
 // refreshClips 只在记录变化时重建切片，按钮状态跟着一起扩容。
 func (u *ui) refreshClips() {
-	all := u.srv.store.Clips(KindText)
+	kind := KindText
+	if u.clipTab == 1 {
+		kind = KindClip
+	}
+	all := u.srv.store.Clips(kind)
 	clips := all
 
 	// 只显示最近 N 条，N 可以在设置里改

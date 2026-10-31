@@ -421,7 +421,9 @@ func (s *Server) handlePostText(w http.ResponseWriter, r *http.Request) {
 // ---------- 剪贴板 ----------
 
 func (s *Server) handleGetClips(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"clips": s.store.Clips()})
+	// ?kind=text 只看文字互传，?kind=clip 只看剪贴板，不带则全部
+	kind := r.URL.Query().Get("kind")
+	writeJSON(w, http.StatusOK, map[string]any{"clips": s.store.Clips(kind)})
 }
 
 func (s *Server) handlePostClip(w http.ResponseWriter, r *http.Request) {

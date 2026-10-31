@@ -29,12 +29,16 @@
   </section>
 
   <section class="card">
-    <h2>剪贴板</h2>
+    <h2>记录</h2>
     <div class="row">
       <input id="text" autocomplete="off">
       <button id="sendText">发送</button>
     </div>
     <p class="note">浏览器读不到系统剪贴板（非 HTTPS），只能发文字、收文字。</p>
+    <div class="tabs">
+      <button class="tab active" data-kind="text">文字互传</button>
+      <button class="tab" data-kind="clip">剪贴板</button>
+    </div>
     <ul class="texts" id="texts"></ul>
   </section>
 </main>
