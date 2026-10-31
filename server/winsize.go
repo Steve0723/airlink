@@ -15,6 +15,7 @@ var (
 	procGetDeviceCaps    = gdi32.NewProc("GetDeviceCaps")
 	procReleaseDC        = user32.NewProc("ReleaseDC")
 	procSetWindowPos     = user32.NewProc("SetWindowPos")
+	procGetWindowRect    = user32.NewProc("GetWindowRect")
 )
 
 const (
@@ -53,13 +54,13 @@ func preferredWindowSize() (unit.Dp, unit.Dp) {
 	sw, _, _ := procGetSystemMetrics.Call(smCXScreen)
 	sh, _, _ := procGetSystemMetrics.Call(smCYScreen)
 
-	w := int(float64(sw) * 0.50)
-	h := int(float64(sh) * 0.60)
+	w := int(float64(sw) * 0.45)
+	h := int(float64(sh) * 0.45)
 
 	// 下限保证设置面板（602dp 高 = 1204 物理）放得下，
 	// 但不能超过屏幕的 90%，否则小屏上反而溢出。
 	// 上限不需要：0.58 本身就把窗口限制在屏幕面积的三分之一。
-	minW, minH := 1400, 1260
+	minW, minH := 1120, 900
 	if capW := int(float64(sw) * 0.9); minW > capW {
 		minW = capW
 	}
@@ -74,6 +75,10 @@ func preferredWindowSize() (unit.Dp, unit.Dp) {
 	}
 
 	return unit.Dp(w), unit.Dp(h)
+}
+
+type winRect struct {
+	Left, Top, Right, Bottom int32
 }
 
 // applyWindowSize 用 Win32 直接把窗口设成指定物理尺寸。
@@ -91,15 +96,15 @@ func applyWindowSize(hwnd uintptr) {
 	sw, _, _ := procGetSystemMetrics.Call(smCXScreen)
 	sh, _, _ := procGetSystemMetrics.Call(smCYScreen)
 
-	// 宽比高收得更紧：面板本来就窄（600dp），横向不需要那么多空间
-	w := int(float64(sw) * 0.50)
-	h := int(float64(sh) * 0.60)
+	// 屏幕的 45%（再大就显笨重）
+	w := int(float64(sw) * 0.45)
+	h := int(float64(sh) * 0.45)
 
-	// 下限：设置面板 602dp 高，200% 缩放下需要 1204 物理，留点边距
-	if minW := 1360; w < minW {
+	// 下限只保证面板能放下（文本面板 640x500dp = 1280x1000 物理）
+	if minW := 1120; w < minW {
 		w = minW
 	}
-	if minH := 1260; h < minH {
+	if minH := 900; h < minH {
 		h = minH
 	}
 	// 别超出屏幕
@@ -114,3 +119,4 @@ func applyWindowSize(hwnd uintptr) {
 	const swpNoMove = 0x0002
 	procSetWindowPos.Call(hwnd, 0, 0, 0, uintptr(w), uintptr(h), swpNoZOrder|swpNoMove)
 }
+

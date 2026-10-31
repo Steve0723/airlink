@@ -94,12 +94,14 @@ func (u *ui) textPanel(gtx layout.Context) {
 	paint.Fill(gtx.Ops, color.NRGBA{R: 0x0F, G: 0x14, B: 0x12, A: 0x70})
 
 	layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		// 四周留 16dp，否则面板贴边、卡片右侧的按钮会被窗口裁掉
+		const margin = 16
 		w, h := gtx.Dp(unit.Dp(640)), gtx.Dp(unit.Dp(500))
-		if m := gtx.Constraints.Max; w > m.X {
-			w = m.X
+		if m := gtx.Constraints.Max; w > m.X-margin {
+			w = m.X - margin
 		}
-		if m := gtx.Constraints.Max; h > m.Y {
-			h = m.Y
+		if m := gtx.Constraints.Max; h > m.Y-margin {
+			h = m.Y - margin
 		}
 		gtx.Constraints = layout.Exact(image.Pt(w, h))
 		return u.card(gtx, func(gtx layout.Context) layout.Dimensions {

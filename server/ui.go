@@ -151,8 +151,9 @@ func runUI(srv *Server) {
 		w.Option(
 			app.Title("AirLink"),
 			app.Size(ww, wh),
-			// 同样按物理像素：760x520 逻辑 = 1520x1040 物理
-			app.MinSize(unit.Dp(1520), unit.Dp(1040)),
+			// 物理像素：500x400 逻辑 = 1000x800 物理。
+			// 之前设 1520x1040 会把窗口硬撑到 760x520，压不下去。
+			app.MinSize(unit.Dp(1000), unit.Dp(800)),
 		)
 
 		// 文件列表和配对码都可能被手机那边改动，定时重绘

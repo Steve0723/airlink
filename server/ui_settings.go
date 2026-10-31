@@ -35,13 +35,14 @@ func (u *ui) settingsPanel(gtx layout.Context) {
 	paintOverlay(gtx)
 
 	layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		// 窗口被拖小时面板跟着缩，别超出窗口被裁掉
-		w, h := gtx.Dp(unit.Dp(600)), gtx.Dp(unit.Dp(602))
-		if m := gtx.Constraints.Max; w > m.X {
-			w = m.X
+		// 窗口被拖小时面板跟着缩，四周留 16dp，别贴边被裁
+		const margin = 16
+		w, h := gtx.Dp(unit.Dp(600)), gtx.Dp(602)
+		if m := gtx.Constraints.Max; w > m.X-margin {
+			w = m.X - margin
 		}
-		if m := gtx.Constraints.Max; h > m.Y {
-			h = m.Y
+		if m := gtx.Constraints.Max; h > m.Y-margin {
+			h = m.Y - margin
 		}
 		gtx.Constraints = layout.Exact(image.Pt(w, h))
 		return u.card(gtx, func(gtx layout.Context) layout.Dimensions {
