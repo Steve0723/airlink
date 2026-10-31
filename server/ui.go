@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -528,7 +529,7 @@ func (u *ui) tile(c *widget.Clickable, label string) layout.Widget {
 			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						side := gtx.Dp(unit.Dp(19))
+						side := gtx.Dp(unit.Dp(21))
 						gtx.Constraints = layout.Exact(image.Pt(side, side))
 						return iconWidget(gtx, label, side, uiGreen)
 					}),
@@ -573,6 +574,30 @@ func iconWidget(gtx layout.Context, kind string, size int, c color.NRGBA) layout
 		p.LineTo(at(0.85, 0.50))
 		p.MoveTo(at(0.15, 0.74))
 		p.LineTo(at(0.60, 0.74))
+	case "设置":
+		// 齿轮走描边，和另外三个图标保持一致。
+		// 关键是线要够粗：19-21dp 下细线会被抗锯齿糊掉。
+		cx, cy := 0.5*f, 0.5*f
+		deg := math.Pi / 180
+
+		// 外圈做大，齿只探出一小截 —— 这样整体是"带凸起的圆"，
+		// 而不是放射状的星形，小尺寸下才不会糊。
+		addCircle(&p, cx, cy, 0.31*f, 28)
+		for i := 0; i < 8; i++ {
+			a := float64(i)*45*deg - math.Pi/2
+			cos, sin := float32(math.Cos(a)), float32(math.Sin(a))
+			p.MoveTo(f32.Pt(cx+0.315*f*cos, cy+0.315*f*sin))
+			p.LineTo(f32.Pt(cx+0.45*f*cos, cy+0.45*f*sin))
+		}
+		// 中心孔
+		addCircle(&p, cx, cy, 0.10*f, 16)
+
+		paint.FillShape(gtx.Ops, c, clip.Stroke{
+			Path:  p.End(),
+			Width: float32(size) * 0.105,
+		}.Op())
+		return layout.Dimensions{Size: image.Pt(size, size)}
+
 	case "剪贴板":
 		// 板身 + 顶部夹子
 		p.MoveTo(at(0.24, 0.22))
@@ -592,6 +617,21 @@ func iconWidget(gtx layout.Context, kind string, size int, c color.NRGBA) layout
 	}.Op())
 
 	return layout.Dimensions{Size: image.Pt(size, size)}
+}
+
+// addCircle 用折线近似一个圆。
+// clip.Path 没有画圆的接口，段数够多时肉眼分不出来。
+func addCircle(p *clip.Path, cx, cy, r float32, seg int) {
+	for i := 0; i <= seg; i++ {
+		a := 2 * math.Pi * float64(i) / float64(seg)
+		x := cx + r*float32(math.Cos(a))
+		y := cy + r*float32(math.Sin(a))
+		if i == 0 {
+			p.MoveTo(f32.Pt(x, y))
+		} else {
+			p.LineTo(f32.Pt(x, y))
+		}
+	}
 }
 
 // linkButton 是配对码旁边那种小文字按钮。
