@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"image"
+	"os"
 	"image/color"
 
 	"gioui.org/layout"
@@ -94,14 +96,17 @@ func (u *ui) textPanel(gtx layout.Context) {
 	paint.Fill(gtx.Ops, color.NRGBA{R: 0x0F, G: 0x14, B: 0x12, A: 0x70})
 
 	layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		// 四周留 16dp，否则面板贴边、卡片右侧的按钮会被窗口裁掉
-		const margin = 16
-		w, h := gtx.Dp(unit.Dp(640)), gtx.Dp(unit.Dp(500))
-		if m := gtx.Constraints.Max; w > m.X-margin {
-			w = m.X - margin
+		// 按窗口的百分比算，不用绝对 dp —— Gio 在不同 DPI 下
+		// 给的约束单位不一致，写死 dp 会导致面板比窗口还大被裁。
+		m := gtx.Constraints.Max
+		w := m.X * 72 / 100
+		h := m.Y * 82 / 100
+		// 大窗口时别放太大
+		if maxW := gtx.Dp(unit.Dp(760)); w > maxW {
+			w = maxW
 		}
-		if m := gtx.Constraints.Max; h > m.Y-margin {
-			h = m.Y - margin
+		if maxH := gtx.Dp(unit.Dp(580)); h > maxH {
+			h = maxH
 		}
 		gtx.Constraints = layout.Exact(image.Pt(w, h))
 		return u.card(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -152,6 +157,9 @@ func (u *ui) textPanel(gtx layout.Context) {
 
 				// 记录列表
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					if debugLayout {
+						fmt.Fprintf(os.Stderr, "[flexed] 收到约束 %v\n", gtx.Constraints)
+					}
 					u.refreshClips()
 					if len(u.clips) == 0 {
 						return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -160,8 +168,15 @@ func (u *ui) textPanel(gtx layout.Context) {
 							return l.Layout(gtx)
 						})
 					}
+					if debugLayout {
+						fmt.Fprintf(os.Stderr, "[list] 收到约束 %v\n", gtx.Constraints)
+					}
 					return u.clipList.Layout(gtx, len(u.clips), func(gtx layout.Context, i int) layout.Dimensions {
-						return u.clipRowWidget(gtx, i)
+						d := u.clipRowWidget(gtx, i)
+						if debugLayout {
+							fmt.Fprintf(os.Stderr, "[clipRow] i=%d size=%v\n", i, d.Size)
+						}
+						return d
 					})
 				}),
 			)
@@ -178,11 +193,21 @@ func (u *ui) clipRowWidget(gtx layout.Context, i int) layout.Dimensions {
 	}
 	if row.del.Clicked(gtx) {
 		u.srv.store.DeleteClip(c.ID)
-		u.clipKey = "" // 强制下一帧重建列表
 	}
 
-	// 每条做成一张浅灰圆角卡片，和手机端 .texts li 一致：
-	// 内容在上、来源·时间在下、按钮靠右
+	// 宽度自己算，不用 Flexed —— 列表给的约束在异常情况下会是
+	// layout.Inf(1000000)，Flexed 照单全收，一行就撑到天边，
+	// 后面的记录全被挤出去（这就是「只显示一条」的成因）。
+	maxX := gtx.Constraints.Max.X
+	if maxX <= 0 || maxX > 10000 {
+		maxX = gtx.Dp(unit.Dp(520)) // 兜底
+	}
+	btnW := gtx.Dp(unit.Dp(84)) // 复制 + 删除
+	contentW := maxX - btnW - gtx.Dp(unit.Dp(16))
+	if contentW < gtx.Dp(unit.Dp(80)) {
+		contentW = gtx.Dp(unit.Dp(80))
+	}
+
 	return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		m := op.Record(gtx.Ops)
 		dims := layout.Inset{
@@ -190,16 +215,17 @@ func (u *ui) clipRowWidget(gtx layout.Context, i int) layout.Dimensions {
 			Left: unit.Dp(12), Right: unit.Dp(8),
 		}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints = layout.Exact(image.Pt(contentW, gtx.Dp(unit.Dp(38))))
+					return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							l := material.Body2(u.th, c.Content)
 							l.Color = uiInk
 							l.TextSize = unit.Sp(13)
-							l.MaxLines = 3
+							l.MaxLines = 2
 							return l.Layout(gtx)
 						}),
-						layout.Rigid(layout.Spacer{Height: unit.Dp(4)}.Layout),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(3)}.Layout),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							l := material.Body2(u.th, c.From+" · "+c.At.Format("01-02 15:04"))
 							l.Color = uiMuted
@@ -228,25 +254,20 @@ func (u *ui) clipRowWidget(gtx layout.Context, i int) layout.Dimensions {
 
 // refreshClips 只在记录变化时重建切片，按钮状态跟着一起扩容。
 func (u *ui) refreshClips() {
-	clips := u.srv.store.Clips()
+	all := u.srv.store.Clips()
+	clips := all
 
 	// 只显示最近 N 条，N 可以在设置里改
 	if limit := u.srv.clipLimit(); limit > 0 && len(clips) > limit {
 		clips = clips[:limit]
 	}
 
-	key := ""
-	for _, c := range clips {
-		key += c.ID
-	}
-	// 清空之后 clips 为空、key 也是空串，只比 key 会误判成"没变化"，
-	// 列表就一直停在旧数据上。加上长度比较才兜得住。
-	if key == u.clipKey && len(clips) == len(u.clips) {
-		return
-	}
-	u.clipKey = key
+	// 之前用 key 缓存避免每帧重建，但那个逻辑在不同步时会让列表卡在旧数据上
+	// （清空、删除、换条数都踩过）。记录本来就不多，直接重建最省心。
 	u.clips = clips
-	u.clipRows = make([]clipRow, len(clips))
+	if len(u.clipRows) != len(clips) {
+		u.clipRows = make([]clipRow, len(clips))
+	}
 }
 
 // clipPreview 把多行文本压成一行，列表里显示用。

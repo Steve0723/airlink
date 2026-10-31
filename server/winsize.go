@@ -2,6 +2,7 @@ package main
 
 import (
 	"syscall"
+	"unsafe"
 
 	"gioui.org/unit"
 )
@@ -16,6 +17,7 @@ var (
 	procReleaseDC        = user32.NewProc("ReleaseDC")
 	procSetWindowPos     = user32.NewProc("SetWindowPos")
 	procGetWindowRect    = user32.NewProc("GetWindowRect")
+	procGetClientRect    = user32.NewProc("GetClientRect")
 )
 
 const (
@@ -50,27 +52,25 @@ func logicalScreen() (int, int) {
 // 传 904 得到 917 物理宽的窗口，也就是 458 逻辑宽）。
 // 所以这里必须用屏幕的物理尺寸来算，不能先除 DPI，
 // 否则窗口只有预期的一半大，面板会被裁掉。
-func preferredWindowSize() (unit.Dp, unit.Dp) {
+func preferredWindowSize(savedW, savedH int) (unit.Dp, unit.Dp) {
+	// 用户上次拖过的大小优先，这样每次打开都是他习惯的尺寸
+	if savedW > 300 && savedH > 240 {
+		return unit.Dp(savedW), unit.Dp(savedH)
+	}
+
+	// 实测 app.Size 建出来的窗口就是这么多物理像素（900 -> 912 物理），
+	// 所以用物理屏幕尺寸算。0.577 = sqrt(1/3)，面积正好是屏幕三分之一。
 	sw, _, _ := procGetSystemMetrics.Call(smCXScreen)
 	sh, _, _ := procGetSystemMetrics.Call(smCYScreen)
 
-	w := int(float64(sw) * 0.45)
-	h := int(float64(sh) * 0.45)
+	w := int(float64(sw) * 0.42)
+	h := int(float64(sh) * 0.46)
 
-	// 下限保证设置面板（602dp 高 = 1204 物理）放得下，
-	// 但不能超过屏幕的 90%，否则小屏上反而溢出。
-	// 上限不需要：0.58 本身就把窗口限制在屏幕面积的三分之一。
-	minW, minH := 1120, 900
-	if capW := int(float64(sw) * 0.9); minW > capW {
-		minW = capW
-	}
-	if capH := int(float64(sh) * 0.9); minH > capH {
-		minH = capH
-	}
-	if w < minW {
+	// 下限：文本面板 640x500dp = 1280x1000 物理
+	if minW := 1300; w < minW {
 		w = minW
 	}
-	if h < minH {
+	if minH := 960; h < minH {
 		h = minH
 	}
 
@@ -81,42 +81,25 @@ type winRect struct {
 	Left, Top, Right, Bottom int32
 }
 
-// applyWindowSize 用 Win32 直接把窗口设成指定物理尺寸。
+
+
+// realClientSize 用 Win32 拿客户区的真实物理尺寸。
 //
-// app.Size 的单位在这台机器上换算得不对（传 904 得到 917 物理宽的窗口，
-// 传 1400 又是 1573，不成比例），结果窗口只有预期的一半，面板被裁掉。
-// 直接在窗口建好后 SetWindowPos 最可靠。
-//
-// 必须在独立线程调用：SetWindowPos 会同步发 WM_SIZE，
-// 而窗口过程是 Gio 的 Go 回调，在界面线程里调会嵌套。
-func applyWindowSize(hwnd uintptr) {
+// Gio 在这台 200% 缩放的机器上，FrameEvent.Size 给的是实际客户区的两倍
+// （实测 e.Size=2808x1872，实际客户区 1408x936）。
+// 布局按 e.Size 算，面板就会超出窗口被裁掉 —— 这就是「最近记录只显示一条」
+// 和「看不到复制删除」的根源。所以这里直接用系统给的尺寸覆盖。
+func realClientSize(hwnd uintptr) (int, int) {
 	if hwnd == 0 {
-		return
+		return 0, 0
 	}
-	sw, _, _ := procGetSystemMetrics.Call(smCXScreen)
-	sh, _, _ := procGetSystemMetrics.Call(smCYScreen)
-
-	// 屏幕的 45%（再大就显笨重）
-	w := int(float64(sw) * 0.45)
-	h := int(float64(sh) * 0.45)
-
-	// 下限只保证面板能放下（文本面板 640x500dp = 1280x1000 物理）
-	if minW := 1120; w < minW {
-		w = minW
+	var r winRect
+	if ok, _, _ := procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&r))); ok == 0 {
+		return 0, 0
 	}
-	if minH := 900; h < minH {
-		h = minH
+	w, h := int(r.Right-r.Left), int(r.Bottom-r.Top)
+	if w <= 0 || h <= 0 {
+		return 0, 0
 	}
-	// 别超出屏幕
-	if capW := int(float64(sw) * 0.92); w > capW {
-		w = capW
-	}
-	if capH := int(float64(sh) * 0.92); h > capH {
-		h = capH
-	}
-
-	const swpNoZOrder = 0x0004
-	const swpNoMove = 0x0002
-	procSetWindowPos.Call(hwnd, 0, 0, 0, uintptr(w), uintptr(h), swpNoZOrder|swpNoMove)
+	return w, h
 }
-

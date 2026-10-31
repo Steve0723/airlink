@@ -96,6 +96,9 @@ type ui struct {
 
 	// 设置面板中间的滚动区
 	settingsScroll layout.List
+
+	// 最近一次测到的真实客户区尺寸（物理像素），关窗时存进配置
+	lastW, lastH int
 	backdropTags                    [4]int // 菜单外四个方向的点击区 tag
 
 	// ---------- 面板 ----------
@@ -141,19 +144,24 @@ func runUI(srv *Server) {
 	u := &ui{srv: srv, th: th, selected: -1, interactive: true}
 	u.list.Axis = layout.Vertical
 	u.settingsScroll.Axis = layout.Vertical
+	// layout.List 的 Axis 零值是 Horizontal，不设就是横向排！
+	// 之前 runUI 漏了这一行，只有快照路径设了，所以离屏渲染正常、
+	// 实际窗口里记录全横着排 —— 排查了半天才发现。
+	u.clipList.Axis = layout.Vertical
 	mainUI = u
 
 	go func() {
 		w := new(app.Window)
 		u.w = w
 
-		ww, wh := preferredWindowSize()
+		ww, wh := preferredWindowSize(srv.state.WinW, srv.state.WinH)
 		w.Option(
 			app.Title("AirLink"),
 			app.Size(ww, wh),
 			// 物理像素：500x400 逻辑 = 1000x800 物理。
 			// 之前设 1520x1040 会把窗口硬撑到 760x520，压不下去。
-			app.MinSize(unit.Dp(1000), unit.Dp(800)),
+			// 允许拖到比较小，面板会自适应（clamp + 滚动）
+			app.MinSize(unit.Dp(560), unit.Dp(440)),
 		)
 
 		// 文件列表和配对码都可能被手机那边改动，定时重绘
@@ -169,6 +177,14 @@ func runUI(srv *Server) {
 			e := w.Event()
 			switch e := e.(type) {
 			case app.DestroyEvent:
+				// 窗口关掉前把尺寸存下来，下次打开还是这个大小
+				if u.lastW > 300 && u.lastH > 240 {
+					u.srv.mu.Lock()
+					u.srv.state.WinW = u.lastW
+					u.srv.state.WinH = u.lastH
+					_ = saveJSON(u.srv.cfg, u.srv.state)
+					u.srv.mu.Unlock()
+				}
 				os.Exit(0)
 			case app.FrameEvent:
 				// 第一帧时窗口才真正建好，这时候才能挂 OLE 拖放
@@ -176,8 +192,6 @@ func runUI(srv *Server) {
 					dropReady = true
 					hwnd := findOwnWindow()
 					u.hwnd = hwnd
-					// 尺寸用 Win32 强制设，app.Size 的单位换算不可靠
-					go applyWindowSize(hwnd)
 					if err := enableOLEDrop(hwnd); err != nil {
 						verbosef("拖放注册失败: %v", err)
 					}
@@ -253,9 +267,10 @@ func snapshotUI(srv *Server, w, h int, scale float32, path, panel string) error 
 	}
 
 	var ops op.Ops
+	// 根约束用 Min=0 模拟真实窗口（Exact 会掩盖布局问题）
 	gtx := layout.Context{
 		Ops:         &ops,
-		Constraints: layout.Exact(image.Pt(w, h)),
+		Constraints: layout.Constraints{Max: image.Pt(w, h)},
 		Metric:      unit.Metric{PxPerDp: scale, PxPerSp: scale},
 	}
 	u.layout(gtx)
@@ -307,6 +322,11 @@ func loadUIFont() []font.FontFace {
 }
 
 func (u *ui) layout(gtx layout.Context) layout.Dimensions {
+	// 记下真实客户区尺寸，窗口关闭时写进配置
+	if w, h := realClientSize(u.hwnd); w > 0 {
+		u.lastW, u.lastH = w, h
+	}
+
 	u.handleClicks(gtx)
 
 	paint.Fill(gtx.Ops, uiPage)

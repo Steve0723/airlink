@@ -20,6 +20,8 @@ type State struct {
 	DeviceID    string    `json:"deviceID,omitempty"` // 公网兜底用的设备标识
 	SaveDir     string    `json:"saveDir,omitempty"`   // 自定义文件保存目录，空表示用默认
 	ClipLimit   int       `json:"clipLimit,omitempty"` // 最近记录显示多少条，0 表示用默认 20
+	WinW        int       `json:"winW,omitempty"`      // 上次的窗口宽（物理像素），0 表示用默认比例
+	WinH        int       `json:"winH,omitempty"`      // 上次的窗口高
 	RelayURL    string    `json:"relayURL,omitempty"`
 	RelayKey    string    `json:"relayKey,omitempty"`
 	Phones      []PhoneInfo `json:"phones,omitempty"`
