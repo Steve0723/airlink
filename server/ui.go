@@ -132,12 +132,39 @@ func runUI(srv *Server) {
 		}()
 
 		var ops op.Ops
+		dropReady := false
 		for {
 			e := w.Event()
 			switch e := e.(type) {
 			case app.DestroyEvent:
 				os.Exit(0)
 			case app.FrameEvent:
+				// 第一帧时窗口才真正建好，这时候才能挂 OLE 拖放
+				if !dropReady {
+					dropReady = true
+					hwnd := findOwnWindow()
+					if err := enableOLEDrop(hwnd); err != nil {
+						verbosef("拖放注册失败: %v", err)
+					}
+					// Gio 不会设窗口图标，这里补上
+					iconPath := filepath.Join(filepath.Dir(u.srv.cfg), "icon.ico")
+					if err := setWindowIcon(hwnd, iconPath); err != nil {
+						verbosef("设置窗口图标失败: %v", err)
+					}
+				}
+
+				// 拖进来的文件在界面线程处理，避免和布局并发写状态
+				select {
+				case paths := <-dropCh:
+					for _, p := range paths {
+						if err := u.addFile(p); err != nil {
+							verbosef("拖入文件失败 %s: %v", p, err)
+						}
+					}
+					u.fileKey = ""
+				default:
+				}
+
 				gtx := app.NewContext(&ops, e)
 				u.layout(gtx)
 				e.Frame(gtx.Ops)
