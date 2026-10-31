@@ -13,22 +13,33 @@ const maxClips = 20
 type ClipItem struct {
 	ID      string    `json:"id"`
 	Content string    `json:"content"`
-	From    string    `json:"from"` // 电脑 / 手机
+	From    string    `json:"from"`           // 电脑 / 手机
+	Kind    string    `json:"kind,omitempty"` // text=文字互传 / clip=剪贴板同步
 	At      time.Time `json:"at"`
 }
+
+// 记录类型
+const (
+	KindText = "text"
+	KindClip = "clip"
+)
 
 func (s *Store) clipPath() string {
 	return filepath.Join(filepath.Dir(s.filesDir), "clips.json")
 }
 
-func (s *Store) AddClip(content, from string) ClipItem {
+func (s *Store) AddClip(content, from, kind string) ClipItem {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if kind == "" {
+		kind = KindText
+	}
 	item := ClipItem{
 		ID:      randomToken()[:10],
 		Content: strings.TrimSpace(content),
 		From:    from,
+		Kind:    kind,
 		At:      time.Now(),
 	}
 	s.clips = append([]ClipItem{item}, s.clips...)
@@ -39,11 +50,28 @@ func (s *Store) AddClip(content, from string) ClipItem {
 	return item
 }
 
-func (s *Store) Clips() []ClipItem {
+// Clips 返回记录。传 kind 时只返回该类型（text / clip），不传返回全部。
+// 旧数据没有 kind 字段，一律当作 text。
+func (s *Store) Clips(kinds ...string) []ClipItem {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]ClipItem, len(s.clips))
-	copy(out, s.clips)
+
+	want := ""
+	if len(kinds) > 0 {
+		want = kinds[0]
+	}
+
+	out := make([]ClipItem, 0, len(s.clips))
+	for _, c := range s.clips {
+		k := c.Kind
+		if k == "" {
+			k = KindText
+		}
+		if want != "" && k != want {
+			continue
+		}
+		out = append(out, c)
+	}
 	return out
 }
 

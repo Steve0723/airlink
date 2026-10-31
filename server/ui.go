@@ -457,7 +457,7 @@ func (u *ui) handleClicks(gtx layout.Context) {
 		}
 		if u.btnSend.Clicked(gtx) {
 			if text := strings.TrimSpace(u.textEditor.Text()); text != "" {
-				u.srv.store.AddClip(text, "电脑")
+				u.srv.store.AddClip(text, "电脑", KindText)
 				u.textEditor.SetText("")
 				u.clipKey = ""
 			}
@@ -541,7 +541,7 @@ func (u *ui) pushClipboard() {
 	if text == "" {
 		return
 	}
-	u.srv.store.AddClip(text, "电脑")
+	u.srv.store.AddClip(text, "电脑", KindClip)
 	u.clipKey = ""
 }
 

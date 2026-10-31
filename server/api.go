@@ -440,7 +440,7 @@ func (s *Server) handlePostClip(w http.ResponseWriter, r *http.Request) {
 	if body.From == "" {
 		body.From = "手机"
 	}
-	item := s.store.AddClip(body.Content, body.From)
+	item := s.store.AddClip(body.Content, body.From, KindText)
 	if body.From == "手机" && s.onClip != nil {
 		go s.onClip(item)
 	}
@@ -476,7 +476,7 @@ func (s *Server) handlePushLocalClip(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "剪贴板里没有文本")
 		return
 	}
-	item := s.store.AddClip(body.Content, "电脑")
+	item := s.store.AddClip(body.Content, "电脑", KindClip)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "clip": item})
 }
 

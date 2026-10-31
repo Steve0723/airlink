@@ -254,7 +254,7 @@ func (u *ui) clipRowWidget(gtx layout.Context, i int) layout.Dimensions {
 
 // refreshClips 只在记录变化时重建切片，按钮状态跟着一起扩容。
 func (u *ui) refreshClips() {
-	all := u.srv.store.Clips()
+	all := u.srv.store.Clips(KindText)
 	clips := all
 
 	// 只显示最近 N 条，N 可以在设置里改
