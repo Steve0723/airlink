@@ -59,8 +59,9 @@ func preferredWindowSize(savedW, savedH int) (unit.Dp, unit.Dp) {
 	if savedW > 300 && savedH > 240 {
 		sw, _, _ := procGetSystemMetrics.Call(smCXScreen)
 		sh, _, _ := procGetSystemMetrics.Call(smCYScreen)
-		maxW := int(float64(sw) * 0.75)
-		maxH := int(float64(sh) * 0.75)
+		// 上限收到 60%：之前 75% 太松，用户拖到 72% 就顶满屏幕了
+		maxW := int(float64(sw) * 0.60)
+		maxH := int(float64(sh) * 0.60)
 		if savedW > maxW {
 			savedW = maxW
 		}
