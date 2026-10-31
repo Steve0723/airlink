@@ -52,6 +52,18 @@ func (s *Server) rotateToken() string {
 	return s.state.Token
 }
 
+// setSaveDir 切换文件保存目录并写进配置。传空串表示恢复默认。
+func (s *Server) setSaveDir(dir string) error {
+	if err := s.store.SetFilesDir(dir); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.state.SaveDir = strings.TrimSpace(dir)
+	err := saveJSON(s.cfg, s.state)
+	s.mu.Unlock()
+	return err
+}
+
 func (s *Server) relayURL() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

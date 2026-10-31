@@ -34,7 +34,7 @@ func (u *ui) settingsPanel(gtx layout.Context) {
 	paintOverlay(gtx)
 
 	layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(600)), gtx.Dp(unit.Dp(468))))
+		gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(600)), gtx.Dp(unit.Dp(566))))
 		return u.card(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -85,6 +85,24 @@ func (u *ui) settingsPanel(gtx layout.Context) {
 				layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return u.netChoices(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(16)}.Layout),
+
+				// ---------- 文件保存位置 ----------
+				layout.Rigid(u.sectionTitle("文件保存位置")),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							l := material.Body2(u.th, u.srv.store.FilesDir())
+							l.Color = uiInk
+							l.MaxLines = 1
+							return l.Layout(gtx)
+						}),
+						layout.Rigid(u.pillButton(&u.btnPickDir, "更改", false)),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+						layout.Rigid(u.pillButton(&u.btnResetDir, "恢复默认", false)),
+					)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(16)}.Layout),
 

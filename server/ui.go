@@ -87,6 +87,9 @@ type ui struct {
 	ctxMenu                         contextMenu
 	ctxOpen, ctxReveal, ctxCopyName widget.Clickable
 	ctxDelete                       widget.Clickable
+
+	// 文件保存位置
+	btnPickDir, btnResetDir widget.Clickable
 	backdropTags                    [4]int // 菜单外四个方向的点击区 tag
 
 	// ---------- 面板 ----------
@@ -191,6 +194,11 @@ func runUI(srv *Server) {
 						}
 					}
 					u.fileKey = ""
+				}
+				select {
+				case dir := <-pickedDir:
+					u.applySaveDir(dir)
+				default:
 				}
 
 				gtx := app.NewContext(&ops, e)
@@ -332,6 +340,37 @@ func (u *ui) cursorPos(gtx layout.Context) image.Point {
 	return image.Pt(int(pt.X), int(pt.Y))
 }
 
+// pickedDir 把文件夹选择框的结果从工作线程交回界面线程
+var pickedDir = make(chan string, 1)
+
+// pickSaveDir 让用户选一个新的保存目录。
+// 和文件选择框一样，必须离开界面线程 —— 它是模态对话框。
+func (u *ui) pickSaveDir() {
+	go func() {
+		dir, err := pickFolder("选择文件保存位置")
+		if err != nil || dir == "" {
+			return
+		}
+		select {
+		case pickedDir <- dir:
+		default:
+		}
+		if u.w != nil {
+			u.w.Invalidate()
+		}
+	}()
+}
+
+// applySaveDir 切换保存目录并落盘。空串表示恢复默认。
+func (u *ui) applySaveDir(dir string) {
+	if err := u.srv.setSaveDir(dir); err != nil {
+		u.settingsError = "设置保存位置失败：" + err.Error()
+		return
+	}
+	u.settingsError = ""
+	u.fileKey = ""
+}
+
 // modalOpen 有浮层挡着时，主界面的按钮和列表都不该响应点击。
 // 面板只是「画」在上面，不会自动拦住事件，得自己判断。
 func (u *ui) modalOpen() bool {
@@ -402,6 +441,12 @@ func (u *ui) handleClicks(gtx layout.Context) {
 		}
 		if u.btnSaveSettings.Clicked(gtx) {
 			u.saveSettings()
+		}
+		if u.btnPickDir.Clicked(gtx) {
+			u.pickSaveDir()
+		}
+		if u.btnResetDir.Clicked(gtx) {
+			u.applySaveDir("")
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
 	"syscall"
 	"unsafe"
@@ -14,6 +15,28 @@ var (
 	comdlg32 = syscall.NewLazyDLL("comdlg32.dll")
 
 	procGetOpenFileNameW = comdlg32.NewProc("GetOpenFileNameW")
+
+	procSHBrowseForFolderW   = shell32.NewProc("SHBrowseForFolderW")
+	procSHGetPathFromIDListW = shell32.NewProc("SHGetPathFromIDListW")
+	procCoTaskMemFree        = ole32.NewProc("CoTaskMemFree")
+)
+
+// browseInfoW 对应 Win32 的 BROWSEINFOW。
+type browseInfoW struct {
+	hwndOwner      uintptr
+	pidlRoot       uintptr
+	pszDisplayName *uint16
+	lpszTitle      *uint16
+	ulFlags        uint32
+	lpfn           uintptr
+	lParam         uintptr
+	iImage         int32
+}
+
+const (
+	bifReturnOnlyFSDirs = 0x0001
+	bifEditBox          = 0x0010
+	bifNewDialogStyle   = 0x0040
 )
 
 type openFileNameW struct {
@@ -138,4 +161,33 @@ func parseMultiSelect(buf []uint16) []string {
 		out = append(out, filepath.Join(dir, name))
 	}
 	return out
+}
+
+// pickFolder 弹出文件夹选择框，返回选中的目录。
+// 用户取消时返回空串，不是错误。
+func pickFolder(title string) (string, error) {
+	display := make([]uint16, 260)
+	titleP, err := syscall.UTF16PtrFromString(title)
+	if err != nil {
+		return "", err
+	}
+
+	bi := browseInfoW{
+		pszDisplayName: &display[0],
+		lpszTitle:      titleP,
+		ulFlags:        bifReturnOnlyFSDirs | bifEditBox | bifNewDialogStyle,
+	}
+
+	pidl, _, _ := procSHBrowseForFolderW.Call(uintptr(unsafe.Pointer(&bi)))
+	if pidl == 0 {
+		return "", nil // 用户取消
+	}
+	// PIDL 是 COM 分配的内存，必须还回去
+	defer procCoTaskMemFree.Call(pidl)
+
+	path := make([]uint16, 260)
+	if r, _, _ := procSHGetPathFromIDListW.Call(pidl, uintptr(unsafe.Pointer(&path[0]))); r == 0 {
+		return "", fmt.Errorf("无法解析所选目录")
+	}
+	return syscall.UTF16ToString(path), nil
 }

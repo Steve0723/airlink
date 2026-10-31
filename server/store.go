@@ -63,18 +63,23 @@ func (u *Upload) Complete() bool {
 
 type Store struct {
 	mu       sync.Mutex
-	filesDir string
-	incDir   string
+	// defaultFilesDir 是数据目录下的 files/，filesDir 是当前生效的
+	// （用户可以在设置里改到别处，改完旧文件仍然留在默认目录）
+	defaultFilesDir string
+	filesDir        string
+	incDir          string
 	texts    []TextEntry
 	textPath string
 	clips    []ClipItem
 }
 
 func NewStore(dataDir string) (*Store, error) {
+	defaultFiles := filepath.Join(dataDir, "files")
 	s := &Store{
-		filesDir: filepath.Join(dataDir, "files"),
-		incDir:   filepath.Join(dataDir, "incoming"),
-		textPath: filepath.Join(dataDir, "texts.json"),
+		defaultFilesDir: defaultFiles,
+		filesDir:        defaultFiles,
+		incDir:          filepath.Join(dataDir, "incoming"),
+		textPath:        filepath.Join(dataDir, "texts.json"),
 	}
 	for _, d := range []string{s.filesDir, s.incDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
@@ -112,27 +117,72 @@ func fileID(name string) string {
 	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:]))[:12]
 }
 
-func (s *Store) Files() []FileEntry {
-	entries, err := os.ReadDir(s.filesDir)
-	if err != nil {
-		return nil
+// SetFilesDir 切换文件保存目录。传空串表示回到默认目录。
+func (s *Store) SetFilesDir(dir string) error {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		dir = s.defaultFilesDir
 	}
-	out := make([]FileEntry, 0, len(entries))
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		info, err := e.Info()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.filesDir = dir
+	s.mu.Unlock()
+	return nil
+}
+
+// FilesDir 返回当前保存目录。
+func (s *Store) FilesDir() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.filesDir
+}
+
+// DefaultFilesDir 返回默认保存目录。
+func (s *Store) DefaultFilesDir() string {
+	return s.defaultFilesDir
+}
+
+func (s *Store) Files() []FileEntry {
+	// 当前目录优先，再把默认目录里剩下的补进来，
+	// 这样用户改过保存位置之后，之前收到的文件也还在列表里。
+	dirs := []string{s.FilesDir()}
+	if def := s.defaultFilesDir; def != dirs[0] {
+		dirs = append(dirs, def)
+	}
+
+	seen := make(map[string]bool)
+	var out []FileEntry
+
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue
 		}
-		out = append(out, FileEntry{
-			ID:      fileID(e.Name()),
-			Name:    e.Name(),
-			Size:    info.Size(),
-			ModTime: info.ModTime(),
-		})
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			out = append(out, FileEntry{
+				ID:      fileID(name),
+				Name:    name,
+				Size:    info.Size(),
+				ModTime: info.ModTime(),
+			})
+		}
 	}
+
 	sort.Slice(out, func(i, j int) bool { return out[i].ModTime.After(out[j].ModTime) })
 	return out
 }
@@ -140,9 +190,17 @@ func (s *Store) Files() []FileEntry {
 // Find 按 ID 找文件。ID 是文件名的哈希，所以不需要额外索引文件。
 func (s *Store) Find(id string) (FileEntry, string, error) {
 	for _, f := range s.Files() {
-		if f.ID == id {
-			return f, filepath.Join(s.filesDir, f.Name), nil
+		if f.ID != id {
+			continue
 		}
+		// 文件可能还在改位置之前的目录里，两个都找一遍
+		for _, dir := range []string{s.FilesDir(), s.defaultFilesDir} {
+			p := filepath.Join(dir, f.Name)
+			if _, err := os.Stat(p); err == nil {
+				return f, p, nil
+			}
+		}
+		return FileEntry{}, "", os.ErrNotExist
 	}
 	return FileEntry{}, "", os.ErrNotExist
 }

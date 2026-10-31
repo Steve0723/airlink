@@ -106,6 +106,13 @@ func main() {
 		cfg:        statePath,
 		mobilePage: mobilePage,
 	}
+
+	// 恢复用户设置过的保存目录
+	if state.SaveDir != "" {
+		if err := store.SetFilesDir(state.SaveDir); err != nil {
+			verbosef("恢复保存目录 %s 失败: %v", state.SaveDir, err)
+		}
+	}
 	handler := srv.routes(http.FileServer(http.FS(sub)))
 
 	// 快照只渲染界面，不监听端口，所以放在占用检测之前
