@@ -16,43 +16,50 @@ import (
 // pillButton 圆角按钮。filled=true 是实心，false 是浅底。
 func (u *ui) pillButton(c *widget.Clickable, label string, filled bool) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
+		if !u.interactive {
+			return u.pillBody(gtx, label, filled, false, false)
+		}
 		return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			bg, fg := uiTile, uiGreen
-			if filled {
-				bg, fg = uiGreen, color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF}
-			}
-			if !filled {
-				if c.Hovered() {
-					bg = color.NRGBA{R: 0xE2, G: 0xE6, B: 0xE3, A: 0xFF}
-				}
-				if c.Pressed() {
-					bg = color.NRGBA{R: 0xD4, G: 0xDA, B: 0xD6, A: 0xFF}
-				}
-			} else if c.Pressed() {
-				bg = color.NRGBA{R: 0x17, G: 0x86, B: 0x63, A: 0xFF}
-			}
-
-			m := op.Record(gtx.Ops)
-			dims := layout.Inset{
-				Top: unit.Dp(7), Bottom: unit.Dp(7),
-				Left: unit.Dp(16), Right: unit.Dp(16),
-			}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				l := material.Body2(u.th, label)
-				l.Color = fg
-				return l.Layout(gtx)
-			})
-			call := m.Stop()
-
-			r := dims.Size.Y / 2
-			rr := clip.RRect{
-				Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y),
-				NW:   r, NE: r, SW: r, SE: r,
-			}
-			paint.FillShape(gtx.Ops, bg, rr.Op(gtx.Ops))
-			call.Add(gtx.Ops)
-			return dims
+			return u.pillBody(gtx, label, filled, c.Hovered(), c.Pressed())
 		})
 	}
+}
+
+func (u *ui) pillBody(gtx layout.Context, label string, filled, hovered, pressed bool) layout.Dimensions {
+	bg, fg := uiTile, uiGreen
+	if filled {
+		bg, fg = uiGreen, color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF}
+	}
+	if !filled {
+		if hovered {
+			bg = color.NRGBA{R: 0xE2, G: 0xE6, B: 0xE3, A: 0xFF}
+		}
+		if pressed {
+			bg = color.NRGBA{R: 0xD4, G: 0xDA, B: 0xD6, A: 0xFF}
+		}
+	} else if pressed {
+		bg = color.NRGBA{R: 0x17, G: 0x86, B: 0x63, A: 0xFF}
+	}
+
+	m := op.Record(gtx.Ops)
+	dims := layout.Inset{
+		Top: unit.Dp(7), Bottom: unit.Dp(7),
+		Left: unit.Dp(16), Right: unit.Dp(16),
+	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		l := material.Body2(u.th, label)
+		l.Color = fg
+		return l.Layout(gtx)
+	})
+	call := m.Stop()
+
+	r := dims.Size.Y / 2
+	rr := clip.RRect{
+		Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y),
+		NW:   r, NE: r, SW: r, SE: r,
+	}
+	paint.FillShape(gtx.Ops, bg, rr.Op(gtx.Ops))
+	call.Add(gtx.Ops)
+	return dims
 }
 
 // inputBox 圆角输入框，内部包一个 Editor。

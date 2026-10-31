@@ -17,7 +17,8 @@ import (
 // Gio 没有内置的右键菜单，得自己处理 pointer 的次键事件 + 画浮层。
 type contextMenu struct {
 	visible bool
-	row     int // 目标行，-1 表示没有
+	row     int        // 目标行，-1 表示没有
+	pos     image.Point // 弹出的位置（窗口客户区坐标，dp）
 }
 
 // menuItem 画一个菜单项。
@@ -79,6 +80,39 @@ func (u *ui) menuSeparator(gtx layout.Context) layout.Dimensions {
 	})
 }
 
+// drawContextMenu 按鼠标位置把菜单画出来。
+// 坐标是窗口客户区，所以直接在根坐标系用 op.Offset 定位。
+func (u *ui) drawContextMenu(gtx layout.Context) {
+	if !u.ctxMenu.visible {
+		return
+	}
+
+	mw := gtx.Dp(unit.Dp(176))
+	maxX := gtx.Constraints.Max.X
+	maxY := gtx.Constraints.Max.Y
+
+	pos := u.ctxMenu.pos
+	// 靠近右边或下边时往回缩，别跑出窗口
+	if pos.X+mw > maxX {
+		pos.X = maxX - mw
+	}
+	if pos.X < 0 {
+		pos.X = 0
+	}
+	if pos.Y < 0 {
+		pos.Y = 0
+	}
+
+	stack := op.Offset(pos).Push(gtx.Ops)
+	defer stack.Pop()
+
+	gtx.Constraints = layout.Constraints{
+		Min: image.Pt(mw, 0),
+		Max: image.Pt(mw, maxY-pos.Y),
+	}
+	u.contextMenuWidget(gtx)
+}
+
 // contextMenuWidget 画右键菜单的浮层。
 func (u *ui) contextMenuWidget(gtx layout.Context) layout.Dimensions {
 	if !u.ctxMenu.visible {
@@ -88,13 +122,6 @@ func (u *ui) contextMenuWidget(gtx layout.Context) layout.Dimensions {
 	if u.ctxMenu.row < 0 || u.ctxMenu.row >= len(u.files) {
 		u.ctxMenu.visible = false
 		return layout.Dimensions{}
-	}
-
-	// 固定宽度。不定宽的话 Stacked 会把它拉到整窗宽，看着就不像浮层了。
-	mw := gtx.Dp(unit.Dp(176))
-	gtx.Constraints = layout.Constraints{
-		Min: image.Pt(mw, 0),
-		Max: image.Pt(mw, gtx.Constraints.Max.Y),
 	}
 
 	items := []layout.Widget{

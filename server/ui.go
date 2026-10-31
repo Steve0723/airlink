@@ -73,6 +73,12 @@ type ui struct {
 	fileRows []rowState
 	selected int // 当前选中的文件下标，-1 表示没选
 
+	hwnd uintptr // 主窗口句柄，查光标位置用
+
+	// interactive 表示当前正在画的那一层能不能交互。
+	// 主界面被面板盖住时置 false，面板自己画的时候再置回 true。
+	interactive bool
+
 	list layout.List
 
 	btnAddFile, btnOpen, btnReveal, btnDeleteFile widget.Clickable
@@ -122,7 +128,7 @@ func runUI(srv *Server) {
 		th.Shaper = text.NewShaper(text.WithCollection(coll))
 	}
 
-	u := &ui{srv: srv, th: th, selected: -1}
+	u := &ui{srv: srv, th: th, selected: -1, interactive: true}
 	u.list.Axis = layout.Vertical
 	mainUI = u
 
@@ -156,6 +162,7 @@ func runUI(srv *Server) {
 				if !dropReady {
 					dropReady = true
 					hwnd := findOwnWindow()
+					u.hwnd = hwnd
 					if err := enableOLEDrop(hwnd); err != nil {
 						verbosef("拖放注册失败: %v", err)
 					}
@@ -208,7 +215,7 @@ func snapshotUI(srv *Server, w, h int, scale float32, path, panel string) error 
 	if coll := loadUIFont(); coll != nil {
 		th.Shaper = text.NewShaper(text.WithCollection(coll))
 	}
-	u := &ui{srv: srv, th: th, selected: -1}
+	u := &ui{srv: srv, th: th, selected: -1, interactive: true}
 	u.list.Axis = layout.Vertical
 	u.clipList.Axis = layout.Vertical
 	u.refreshFiles()
@@ -220,7 +227,7 @@ func snapshotUI(srv *Server, w, h int, scale float32, path, panel string) error 
 	case "menu":
 		// 右键菜单需要交互才出现，快照时手动打开方便检查样式
 		u.selected = 0
-		u.ctxMenu = contextMenu{visible: true, row: 0}
+		u.ctxMenu = contextMenu{visible: true, row: 0, pos: image.Pt(520, 600)}
 	}
 
 	var ops op.Ops
@@ -282,6 +289,8 @@ func (u *ui) layout(gtx layout.Context) layout.Dimensions {
 
 	paint.Fill(gtx.Ops, uiPage)
 
+	// 主界面被面板盖住时不响应鼠标：不注册输入区域，hover 也不会变灰
+	u.interactive = !u.modalOpen()
 	dims := layout.UniformInset(unit.Dp(14)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -294,6 +303,9 @@ func (u *ui) layout(gtx layout.Context) layout.Dimensions {
 		)
 	})
 
+	// 面板里的控件要能正常用
+	u.interactive = true
+
 	// 面板最后画，才能盖在主界面上面
 	if u.showText {
 		u.textPanel(gtx)
@@ -302,7 +314,21 @@ func (u *ui) layout(gtx layout.Context) layout.Dimensions {
 		u.settingsPanel(gtx)
 	}
 
+	// 右键菜单最后画，按鼠标位置绝对定位
+	u.drawContextMenu(gtx)
+
 	return dims
+}
+
+// cursorPos 返回鼠标在窗口内的位置（像素）。
+// Gio 的 op.Offset 和 gtx.Constraints 都用像素，所以这里不能转成 dp，
+// 否则菜单位置和约束会算错（之前就是这样，框被拉高还偏移）。
+func (u *ui) cursorPos(gtx layout.Context) image.Point {
+	pt, ok := cursorInClient(u.hwnd)
+	if !ok {
+		return image.Point{}
+	}
+	return image.Pt(int(pt.X), int(pt.Y))
 }
 
 // modalOpen 有浮层挡着时，主界面的按钮和列表都不该响应点击。
@@ -584,38 +610,46 @@ func (u *ui) tile(c *widget.Clickable, label string) layout.Widget {
 		size := image.Pt(gtx.Dp(unit.Dp(92)), gtx.Dp(unit.Dp(64)))
 		gtx.Constraints = layout.Exact(size)
 
+		// 不可交互时只画静态外观：不注册输入区域，鼠标移上去也不会变灰
+		if !u.interactive {
+			return u.tileBody(gtx, label, size, false, false)
+		}
 		return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			bg := uiTile
-			if c.Hovered() {
-				bg = color.NRGBA{R: 0xE2, G: 0xE6, B: 0xE3, A: 0xFF}
-			}
-			if c.Pressed() {
-				bg = color.NRGBA{R: 0xD4, G: 0xDA, B: 0xD6, A: 0xFF}
-			}
-			r := gtx.Dp(unit.Dp(12))
-			rr := clip.RRect{
-				Rect: image.Rectangle{Max: size},
-				NW:   r, NE: r, SW: r, SE: r,
-			}
-			paint.FillShape(gtx.Ops, bg, rr.Op(gtx.Ops))
-
-			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						side := gtx.Dp(unit.Dp(21))
-						gtx.Constraints = layout.Exact(image.Pt(side, side))
-						return iconWidget(gtx, label, side, uiGreen)
-					}),
-					layout.Rigid(layout.Spacer{Height: unit.Dp(5)}.Layout),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						l := material.Body2(u.th, label)
-						l.Color = uiGreen
-						return l.Layout(gtx)
-					}),
-				)
-			})
+			return u.tileBody(gtx, label, size, c.Hovered(), c.Pressed())
 		})
 	}
+}
+
+func (u *ui) tileBody(gtx layout.Context, label string, size image.Point, hovered, pressed bool) layout.Dimensions {
+	bg := uiTile
+	if hovered {
+		bg = color.NRGBA{R: 0xE2, G: 0xE6, B: 0xE3, A: 0xFF}
+	}
+	if pressed {
+		bg = color.NRGBA{R: 0xD4, G: 0xDA, B: 0xD6, A: 0xFF}
+	}
+	r := gtx.Dp(unit.Dp(12))
+	rr := clip.RRect{
+		Rect: image.Rectangle{Max: size},
+		NW:   r, NE: r, SW: r, SE: r,
+	}
+	paint.FillShape(gtx.Ops, bg, rr.Op(gtx.Ops))
+
+	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				side := gtx.Dp(unit.Dp(21))
+				gtx.Constraints = layout.Exact(image.Pt(side, side))
+				return iconWidget(gtx, label, side, uiGreen)
+			}),
+			layout.Rigid(layout.Spacer{Height: unit.Dp(5)}.Layout),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				l := material.Body2(u.th, label)
+				l.Color = uiGreen
+				return l.Layout(gtx)
+			}),
+		)
+	})
 }
 
 // iconWidget 用矢量路径画操作入口的图标。
@@ -724,9 +758,7 @@ func (u *ui) filesCard(gtx layout.Context) layout.Dimensions {
 	u.refreshFiles()
 
 	return u.card(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Stack{Alignment: layout.NE}.Layout(gtx,
-			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -791,15 +823,6 @@ func (u *ui) filesCard(gtx layout.Context) layout.Dimensions {
 					}),
 				)
 			}),
-				)
-			}),
-			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-				if !u.ctxMenu.visible {
-					return layout.Dimensions{}
-				}
-				// 菜单落在文件卡片内右上角，避开顶部那一排按钮
-				return layout.Inset{Top: unit.Dp(44), Right: unit.Dp(4)}.Layout(gtx, u.contextMenuWidget)
-			}),
 		)
 	})
 }
@@ -836,7 +859,7 @@ func (u *ui) fileRow(gtx layout.Context, i int, f FileEntry) layout.Dimensions {
 			switch e.Buttons {
 			case pointer.ButtonSecondary:
 				u.selected = i
-				u.ctxMenu = contextMenu{visible: true, row: i}
+				u.ctxMenu = contextMenu{visible: true, row: i, pos: u.cursorPos(gtx)}
 			case pointer.ButtonPrimary:
 				u.selected = i
 				u.ctxMenu.visible = false
