@@ -151,54 +151,12 @@ func (u *ui) textPanel(gtx layout.Context) {
 							return l.Layout(gtx)
 						})
 					}
-					items := u.clipItems()
-					return u.clipList.Layout(gtx, len(items), func(gtx layout.Context, i int) layout.Dimensions {
-						it := items[i]
-						if it.isHeader {
-							return u.clipGroupHeader(gtx, it.label)
-						}
-						return u.clipRowWidget(gtx, it.idx)
+					return u.clipList.Layout(gtx, len(u.clips), func(gtx layout.Context, i int) layout.Dimensions {
+						return u.clipRowWidget(gtx, i)
 					})
 				}),
 			)
 		})
-	})
-}
-
-// clipRowItem 是列表里的一行：要么是分组标题，要么是一条记录。
-type clipRowItem struct {
-	isHeader bool
-	label    string
-	idx      int // 在 u.clips 里的下标，按钮状态按它取
-}
-
-// clipItems 把记录按来源分成「手机发送」和「电脑发送」两组。
-// 组内保持原来的时间倒序。
-func (u *ui) clipItems() []clipRowItem {
-	var out []clipRowItem
-	for _, from := range []string{"手机", "电脑"} {
-		first := true
-		for i, c := range u.clips {
-			if c.From != from {
-				continue
-			}
-			if first {
-				out = append(out, clipRowItem{isHeader: true, label: from + "发送"})
-				first = false
-			}
-			out = append(out, clipRowItem{idx: i})
-		}
-	}
-	return out
-}
-
-// clipGroupHeader 画分组标题
-func (u *ui) clipGroupHeader(gtx layout.Context, label string) layout.Dimensions {
-	return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		l := material.Body2(u.th, label)
-		l.Color = uiMuted
-		l.TextSize = unit.Sp(11)
-		return l.Layout(gtx)
 	})
 }
 
@@ -233,11 +191,12 @@ func (u *ui) clipRowWidget(gtx layout.Context, i int) layout.Dimensions {
 				return l.Layout(gtx)
 			}),
 			layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-			// 时间
+			// 来源 + 时间，和手机端一样合成一栏
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(80)), gtx.Dp(unit.Dp(20))))
-				l := material.Body2(u.th, c.At.Format("01-02 15:04"))
+				gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(124)), gtx.Dp(unit.Dp(20))))
+				l := material.Body2(u.th, c.From+" · "+c.At.Format("01-02 15:04"))
 				l.Color = uiMuted
+				l.TextSize = unit.Sp(12)
 				return l.Layout(gtx)
 			}),
 			layout.Rigid(u.linkButton(&row.copy, "复制")),
