@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"strings"
@@ -34,7 +35,7 @@ func (u *ui) settingsPanel(gtx layout.Context) {
 	paintOverlay(gtx)
 
 	layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(600)), gtx.Dp(unit.Dp(566))))
+		gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(600)), gtx.Dp(unit.Dp(602))))
 		return u.card(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -48,7 +49,7 @@ func (u *ui) settingsPanel(gtx layout.Context) {
 						layout.Rigid(u.linkButton(&u.btnCloseSettings, "关闭")),
 					)
 				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(16)}.Layout),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 
 				// ---------- 配对 ----------
 				layout.Rigid(u.sectionTitle("配对")),
@@ -78,7 +79,7 @@ func (u *ui) settingsPanel(gtx layout.Context) {
 						}),
 					)
 				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(16)}.Layout),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 
 				// ---------- 网络地址 ----------
 				layout.Rigid(u.sectionTitle("网络地址")),
@@ -86,7 +87,7 @@ func (u *ui) settingsPanel(gtx layout.Context) {
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return u.netChoices(gtx)
 				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(16)}.Layout),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 
 				// ---------- 文件保存位置 ----------
 				layout.Rigid(u.sectionTitle("文件保存位置")),
@@ -104,7 +105,29 @@ func (u *ui) settingsPanel(gtx layout.Context) {
 						layout.Rigid(u.pillButton(&u.btnResetDir, "恢复默认", false)),
 					)
 				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(16)}.Layout),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+
+				// ---------- 最近记录 ----------
+				layout.Rigid(u.sectionTitle("最近记录")),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					children := []layout.FlexChild{
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							l := material.Body2(u.th, "显示条数")
+							l.Color = uiMuted
+							return l.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(12)}.Layout),
+					}
+					for i, n := range clipLimitOptions {
+						if i > 0 {
+							children = append(children, layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout))
+						}
+						children = append(children, layout.Rigid(u.limitChip(i, n)))
+					}
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 
 				// ---------- 公网中转 ----------
 				layout.Rigid(u.sectionTitle("公网中转")),
@@ -132,7 +155,7 @@ func (u *ui) settingsPanel(gtx layout.Context) {
 						}),
 					)
 				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(16)}.Layout),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 
 				// ---------- 已配对手机 ----------
 				layout.Rigid(u.sectionTitle("已配对的手机")),
@@ -170,6 +193,22 @@ func (u *ui) settingsPanel(gtx layout.Context) {
 			)
 		})
 	})
+}
+
+// clipLimitOptions 设置里可选的显示条数
+var clipLimitOptions = [5]int{10, 20, 30, 50, 100}
+
+// limitChip 画一个「显示条数」选项
+func (u *ui) limitChip(idx, n int) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		c := &u.limitChips[idx]
+		if c.Clicked(gtx) {
+			u.srv.setClipLimit(n)
+			u.clipKey = "" // 强制重建列表
+		}
+		selected := u.srv.clipLimit() == n
+		return u.chip(c, selected, fmt.Sprintf("%d", n))(gtx)
+	}
 }
 
 // netChoices 网络地址用一排可点的标签，比下拉框直观：

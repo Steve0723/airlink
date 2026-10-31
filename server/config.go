@@ -18,7 +18,8 @@ type State struct {
 	DeviceName  string    `json:"deviceName"`
 	PreferredIP string    `json:"preferredIP,omitempty"`
 	DeviceID    string    `json:"deviceID,omitempty"` // 公网兜底用的设备标识
-	SaveDir     string    `json:"saveDir,omitempty"` // 自定义文件保存目录，空表示用默认
+	SaveDir     string    `json:"saveDir,omitempty"`   // 自定义文件保存目录，空表示用默认
+	ClipLimit   int       `json:"clipLimit,omitempty"` // 最近记录显示多少条，0 表示用默认 20
 	RelayURL    string    `json:"relayURL,omitempty"`
 	RelayKey    string    `json:"relayKey,omitempty"`
 	Phones      []PhoneInfo `json:"phones,omitempty"`

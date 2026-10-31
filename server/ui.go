@@ -90,6 +90,9 @@ type ui struct {
 
 	// 文件保存位置
 	btnPickDir, btnResetDir widget.Clickable
+
+	// 最近记录条数选项
+	limitChips [5]widget.Clickable
 	backdropTags                    [4]int // 菜单外四个方向的点击区 tag
 
 	// ---------- 面板 ----------

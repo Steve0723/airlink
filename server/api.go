@@ -52,6 +52,33 @@ func (s *Server) rotateToken() string {
 	return s.state.Token
 }
 
+// 最近记录默认显示条数
+const defaultClipLimit = 20
+
+// clipLimit 返回最近记录要显示多少条。
+func (s *Server) clipLimit() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state.ClipLimit <= 0 {
+		return defaultClipLimit
+	}
+	return s.state.ClipLimit
+}
+
+// setClipLimit 设置最近记录条数并落盘。
+func (s *Server) setClipLimit(n int) {
+	if n < 5 {
+		n = 5
+	}
+	if n > 200 {
+		n = 200
+	}
+	s.mu.Lock()
+	s.state.ClipLimit = n
+	_ = saveJSON(s.cfg, s.state)
+	s.mu.Unlock()
+}
+
 // setSaveDir 切换文件保存目录并写进配置。传空串表示恢复默认。
 func (s *Server) setSaveDir(dir string) error {
 	if err := s.store.SetFilesDir(dir); err != nil {
