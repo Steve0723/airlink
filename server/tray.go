@@ -11,7 +11,7 @@ import (
 //
 // 界面现在是 Edge 的独立窗口，用户把它关掉之后服务还在跑——
 // 没有托盘的话程序既打不开也没法退出，只能去任务管理器杀进程。
-func runTray(srv *Server, port int) {
+func runTray(srv *Server) {
 	icon, err := os.ReadFile(filepath.Join(filepath.Dir(srv.cfg), "icon.ico"))
 	if err != nil {
 		icon, _ = os.ReadFile("icon.ico")
@@ -40,7 +40,7 @@ func runTray(srv *Server, port int) {
 			for {
 				select {
 				case <-mOpen.ClickedCh:
-					openConsoleWindow(port)
+					mainUI.raise()
 				case <-mQuit.ClickedCh:
 					systray.Quit()
 					return

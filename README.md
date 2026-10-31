@@ -18,14 +18,14 @@ Windows 原生桌面程序 + 安卓原生 App。同一个 WiFi 下扫码即传�
 ```
 airlink/
 ├── relay/               公网兜底中转（Go，纯标准库，可选部署）
-├── server/              Windows 端（Go 服务 + Edge 应用窗口界面）
+├── server/              Windows 端（Go 服务 + Gio 原生自绘界面）
 │   ├── main.go          启动、命令行参数
 │   ├── gui.go           窗口、二维码、IP 选择器、文件列表
 │   ├── api.go           HTTP 接口
 │   ├── store.go         文件存储、分片、断点续传
 │   ├── netinfo.go       网卡枚举与虚拟网卡过滤
 │   ├── config.go        配对码与配置持久化
-│   ├── app.manifest     Common Controls v6（托盘与剪贴板用到 Walk）
+│   ├── app.manifest     Common Controls v6（托盘图标用）
 │   ├── rsrc.syso        由 manifest + 图标生成的资源
 │   └── web/             /j 手机网页版
 ├── android/             安卓端（Kotlin + Compose）
@@ -119,26 +119,40 @@ gradle assembleDebug
 
 ## 界面
 
-Windows 端的主界面是 HTML，用 Edge 的应用模式打开：
+Windows 端是**纯 Go 自绘**的，不依赖任何浏览器内核：
 
 ```
-AirLink.exe 启动
-   ↓
-本地 HTTP 服务（127.0.0.1:6027）
-   ↓
-msedge --app=http://127.0.0.1:6027/ui   ← 没有地址栏和标签页
+AirLink.exe
+   ├── 本地 HTTP 服务（127.0.0.1:6027）  ← 只服务手机
+   └── Gio 窗口（同一个进程，直接读 store）
 ```
 
-**为什么不用原生控件**：Walk 封装的是 Win32 标准控件，按钮、列表、输入框的外观由系统绘制。圆角、实心按钮、卡片式列表这些都改不了——试过一轮（字号层级、卡片分组、图标按钮），方角和灰边框是它的硬上限。
+界面用 [Gio](https://gioui.org) 绘制——圆角、卡片、阴影都是程序自己画的像素，
+不是系统控件的拼装，也不是网页。
 
-换成 HTML 之后，界面就是 CSS 写的，圆角、阴影、配色、悬停效果都能做到位，和 LocalSend 那种风格一致。
+**为什么换过两次**
 
-### 依赖
+| 阶段 | 做法 | 问题 |
+|---|---|---|
+| 最初 | Walk（Win32 控件封装） | 按钮、列表、输入框的外观由系统绘制，圆角/实心按钮/卡片列表**改不了** |
+| 中间 | HTML + Edge `--app` 窗口 | 外观能做了，但要启动 `msedge.exe`，任务栏图标、标题栏都是 Edge 的 |
+| 现在 | Gio 纯 Go 自绘 | 一个进程、一个 exe，外观完全自主 |
 
-| 依赖 | 说明 |
+### 关键指标
+
+| 项 | 值 |
 |---|---|
-| Microsoft Edge | Windows 10/11 默认自带。找不到时退回系统默认浏览器（多一条地址栏，功能一样） |
-| 无需 WebView2 SDK | `--app` 模式用的是系统已有的 Edge，不需要额外运行时 |
+| 渲染 | Gio 自绘，`CGO_ENABLED=0` 可编译 |
+| 二进制 | 约 17 MB 单文件 |
+| 浏览器依赖 | 无。二进制里没有 `WebView2` / `msedge` / `chrome` |
+| 进程 | 只有 `AirLink.exe` 一个 |
+| 中文字体 | 读系统的 `C:/Windows/Fonts/msyh.ttc`，不塞进二进制 |
+| 图标 | 矢量路径绘制（`clip.Path`），任意 DPI 都清晰 |
+
+### 窗口尺寸
+
+启动时按**屏幕面积的三分之一**开窗：宽高各取屏幕逻辑尺寸的 0.58，
+再夹在 880–1400 × 620–1000 之间。换显示器会自动适配。
 
 ### 托盘
 
@@ -148,7 +162,21 @@ msedge --app=http://127.0.0.1:6027/ui   ← 没有地址栏和标签页
 - **地址** —— 显示手机该连哪个地址
 - **退出** —— 停服务并退出进程
 
-再次双击 exe 时如果检测到端口已被占用，只会把窗口叫到前台然后自己退出，不会开出第二个实例。
+再次双击 exe 时如果检测到端口已被占用，会通过 `POST /api/console/raise`
+让已运行的实例把窗口提到前台，然后自己退出，不会开出第二个实例。
+
+### 开发用
+
+界面可以直接渲染成图片，不需要显示器（机器锁屏时也能用）：
+
+```bash
+AirLink.exe -snapshot ui.png                    # 主界面
+AirLink.exe -snapshot text.png -snapshot-panel text      # 文本面板
+AirLink.exe -snapshot set.png  -snapshot-panel settings  # 设置面板
+```
+
+用的是 Gio 的 `gpu/headless` 离屏渲染，尺寸和 DPI 可以调
+（`-snapshot-w` / `-snapshot-h` / `-snapshot-scale`）。
 
 ## 公网兜底
 
@@ -236,7 +264,6 @@ d=<设备ID>  n=<设备名>  v=1
 - **二维码里带了 relay 密钥**。这意味着二维码一旦泄露，别人可以往你 relay 上的**任意设备**投递（但读不到已有文件，因为设备 ID 不同）。要收紧的话，需要 relay 给每台设备签发独立 token，目前没做。
 - **兜底是单向的**：手机 → 电脑。电脑 → 手机在异地时还做不到，因为手机不常驻轮询（后台轮询太耗电）。
 - **中转是明文**。文件在 relay 上以原始字节存在，取走即删。你自己运维这台服务器，威胁模型是"服务器被攻破"。
-- **界面依赖 Edge**。没有 Edge 的机器会退回默认浏览器，外观一样但多一条地址栏。
 - **mDNS 会广播设备名和设备 ID**。不含任何密钥，但同一网络下能被看到。介意的话可以在系统防火墙里屏蔽 5353/UDP。
 
 ## 已知限制

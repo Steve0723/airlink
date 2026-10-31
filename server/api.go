@@ -27,7 +27,6 @@ type Server struct {
 	mu         sync.RWMutex // 保护 state.Token / PreferredIP
 	cfg        string       // state.json 路径
 	mobilePage []byte       // /j 页面，给手机浏览器用
-	uiPage     []byte       // /ui 桌面端页面
 
 	// onClip 由窗口注入：手机发来剪贴板时回调，用于自动复制到 Windows 剪贴板。
 	onClip func(ClipItem)
@@ -444,25 +443,11 @@ func (s *Server) handlePushLocalClip(w http.ResponseWriter, r *http.Request) {
 
 // ---------- 控制台：文件与设置 ----------
 
-func (s *Server) handleConsoleUI(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// 界面随版本变化，不能让 Edge 拿缓存，否则改完看不到效果
-	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write(s.uiPage)
-}
-
-// handleFavicon 提供窗口图标。
-// Edge 的 --app 模式会用网页 favicon 当窗口和任务栏图标，
-// 不给的话任务栏上显示的就是 Edge 自己的图标。
-func (s *Server) handleFavicon(w http.ResponseWriter, r *http.Request) {
-	data, err := uiAssets.ReadFile("icon.ico")
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Content-Type", "image/x-icon")
-	w.Header().Set("Cache-Control", "public, max-age=86400")
-	_, _ = w.Write(data)
+// handleConsoleRaise 把已经开着的窗口提到前台。
+// 第二次双击 exe 时，新进程发现端口被占用就走这里，不会开出第二个实例。
+func (s *Server) handleConsoleRaise(w http.ResponseWriter, r *http.Request) {
+	mainUI.raise()
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) handleConsoleDeleteFile(w http.ResponseWriter, r *http.Request) {
@@ -678,10 +663,9 @@ func (s *Server) routes(static http.Handler) http.Handler {
 	mux.HandleFunc("DELETE /api/v1/clipboard/{id}", s.requireToken(s.handleDeleteClip))
 	mux.HandleFunc("DELETE /api/v1/clipboard", s.requireToken(s.handleClearClips))
 	mux.HandleFunc("POST /api/console/clipboard", s.loopbackOnly(s.handlePushLocalClip))
-	mux.HandleFunc("GET /ui", s.handleConsoleUI)
-	mux.HandleFunc("GET /favicon.ico", s.handleFavicon)
 	mux.HandleFunc("GET /api/console/clips", s.loopbackOnly(s.handleConsoleClips))
 	mux.HandleFunc("DELETE /api/console/clips/{id}", s.loopbackOnly(s.handleConsoleDeleteClip))
+	mux.HandleFunc("POST /api/console/raise", s.loopbackOnly(s.handleConsoleRaise))
 	mux.HandleFunc("DELETE /api/console/files/{id}", s.loopbackOnly(s.handleConsoleDeleteFile))
 	mux.HandleFunc("POST /api/console/files/{id}/open", s.loopbackOnly(s.handleConsoleOpenFile))
 	mux.HandleFunc("POST /api/console/files/{id}/reveal", s.loopbackOnly(s.handleConsoleRevealFile))

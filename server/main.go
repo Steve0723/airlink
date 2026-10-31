@@ -10,14 +10,12 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/lxn/walk"
 	qrcode "github.com/skip2/go-qrcode"
 )
 
@@ -43,6 +41,13 @@ func main() {
 	relayURL := flag.String("relay", "", "公网中转服务地址（也可在界面「设置」里填）")
 	relayKey := flag.String("relay-key", "", "中转服务的上传密钥")
 	mdnsProbe := flag.Bool("mdns-probe", false, "只做 mDNS 自检：广播并浏览几秒后退出")
+
+	// 开发用：把界面渲染成 PNG 后退出，不需要显示器
+	snapPath  := flag.String("snapshot", "", "把界面渲染到指定 PNG 后退出")
+	snapW     := flag.Int("snapshot-w", 1808, "快照宽度（物理像素）")
+	snapH     := flag.Int("snapshot-h", 1240, "快照高度（物理像素）")
+	snapScale := flag.Float64("snapshot-scale", 2, "快照 DPI 缩放")
+	snapPanel := flag.String("snapshot-panel", "", "快照时打开的面板：text / settings")
 	flag.BoolVar(&verbose, "v", false, "输出详细日志")
 	flag.Parse()
 
@@ -93,10 +98,6 @@ func main() {
 	if err != nil {
 		fatal("手机页面缺失: %v", err)
 	}
-	uiPage, err := fs.ReadFile(sub, "ui.html")
-	if err != nil {
-		fatal("桌面页面缺失: %v", err)
-	}
 
 	srv := &Server{
 		store:      store,
@@ -104,14 +105,22 @@ func main() {
 		port:       *port,
 		cfg:        statePath,
 		mobilePage: mobilePage,
-		uiPage:     uiPage,
 	}
 	handler := srv.routes(http.FileServer(http.FS(sub)))
+
+	// 快照只渲染界面，不监听端口，所以放在占用检测之前
+	if *snapPath != "" {
+		if err := snapshotUI(srv, *snapW, *snapH, float32(*snapScale), *snapPath, *snapPanel); err != nil {
+			fatal("渲染快照失败: %v", err)
+		}
+		fmt.Println("已保存", *snapPath)
+		return
+	}
 
 	// 端口已被占用说明已经有一个 AirLink 在跑，直接把窗口叫到前台就退出，
 	// 免得用户双击两次开出一堆后台进程。
 	if !*noGUI && portInUse(*port) {
-		openConsoleWindow(*port)
+		raiseExisting(*port)
 		return
 	}
 
@@ -133,7 +142,7 @@ func main() {
 	// 手机发来的文字直接写进 Windows 剪贴板，用户不用再点一次复制。
 	// 写失败不影响主流程——记录本身已经存下来了。
 	srv.onClip = func(item ClipItem) {
-		if err := walk.Clipboard().SetText(item.Content); err != nil {
+		if err := setClipboard(item.Content); err != nil {
 			verbosef("写入剪贴板失败: %v", err)
 		}
 	}
@@ -161,8 +170,26 @@ func main() {
 		waitSignal()
 		return
 	}
-	openConsoleWindow(*port)
-	runTray(srv, *port)
+	// 托盘在后台跑自己的消息循环，主线程留给 Gio 的界面循环。
+	if os.Getenv("AIRLINK_NO_TRAY") == "" {
+		go runTray(srv)
+	}
+	runUI(srv)
+}
+
+// raiseExisting 让已经在跑的那个实例把窗口提到前台，然后本进程退出。
+func raiseExisting(port int) {
+	client := &http.Client{Timeout: 2 * time.Second}
+	req, err := http.NewRequest(http.MethodPost,
+		fmt.Sprintf("http://127.0.0.1:%d/api/console/raise", port), nil)
+	if err != nil {
+		return
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	_ = resp.Body.Close()
 }
 
 // portInUse 判断本地端口是否已经被监听。
@@ -173,34 +200,6 @@ func portInUse(port int) bool {
 	}
 	_ = c.Close()
 	return true
-}
-
-// openConsoleWindow 用 Edge 的应用模式打开界面。
-// --app 模式没有地址栏和标签页，看起来就是一个独立窗口；
-// 界面本身是 HTML，所以圆角、卡片、配色都能做到位，这是 Walk 给不了的。
-func openConsoleWindow(port int) {
-	url := fmt.Sprintf("http://127.0.0.1:%d/ui", port)
-
-	candidates := []string{
-		filepath.Join(os.Getenv("ProgramFiles(x86)"), `Microsoft\Edge\Application\msedge.exe`),
-		filepath.Join(os.Getenv("ProgramFiles"), `Microsoft\Edge\Application\msedge.exe`),
-		filepath.Join(os.Getenv("LOCALAPPDATA"), `Microsoft\Edge\Application\msedge.exe`),
-	}
-	for _, exe := range candidates {
-		if exe == "" {
-			continue
-		}
-		if _, err := os.Stat(exe); err != nil {
-			continue
-		}
-		cmd := exec.Command(exe, "--app="+url, "--window-size=920,780")
-		if err := cmd.Start(); err == nil {
-			return
-		}
-	}
-
-	// 没有 Edge 就退回系统默认浏览器，功能一样，只是多了地址栏。
-	_ = exec.Command("explorer", url).Start()
 }
 
 // ensureIcon 把内嵌图标落到数据目录，供窗口和托盘加载。

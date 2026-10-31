@@ -19,7 +19,8 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          # Gio 要求 Go 1.24+，界面从 Walk/Edge 换成自绘之后必须升
+          go-version: "1.24"
           cache-dependency-path: server/go.sum
 
       - name: 编译

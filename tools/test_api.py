@@ -207,11 +207,13 @@ phones = state.get("phones", [])
 check("手机已持久化", any(p["id"] == "phone-test-1" for p in phones), phones)
 check("重复登记不产生两条", len([p for p in phones if p["id"] == "phone-test-1"]) == 1, phones)
 
-print("\n[11] 桌面端页面与控制台接口")
-s, body, _ = req("GET", "/ui", raw=True)
-check("桌面页面可访问", s == 200 and b"<html" in body.lower(), s)
-s, body, _ = req("GET", "/favicon.ico", raw=True)
-check("窗口图标可访问", s == 200 and body[:4] == b"\x00\x00\x01\x00", body[:8])
+print("\n[11] 控制台接口")
+# 界面换成 Gio 原生绘制之后 /ui 和 /favicon.ico 都删了，
+# 桌面端直接调 store，不再走 HTTP。这里只保留仍需 HTTP 的部分。
+s, j, _ = req("POST", "/api/console/raise")
+check("唤起窗口接口可用", s == 200, s)
+s, j, _ = req("GET", "/ui")
+check("旧的网页界面已移除", s == 404, s)
 
 s, j, _ = req("POST", "/api/console/upload?name=" + urllib.parse.quote("控制台测试.txt"), b"console")
 fid = j["file"]["id"]
