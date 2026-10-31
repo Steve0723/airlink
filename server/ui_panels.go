@@ -94,7 +94,14 @@ func (u *ui) textPanel(gtx layout.Context) {
 	paint.Fill(gtx.Ops, color.NRGBA{R: 0x0F, G: 0x14, B: 0x12, A: 0x70})
 
 	layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(560)), gtx.Dp(unit.Dp(392))))
+		w, h := gtx.Dp(unit.Dp(640)), gtx.Dp(unit.Dp(500))
+		if m := gtx.Constraints.Max; w > m.X {
+			w = m.X
+		}
+		if m := gtx.Constraints.Max; h > m.Y {
+			h = m.Y
+		}
+		gtx.Constraints = layout.Exact(image.Pt(w, h))
 		return u.card(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				// 标题
@@ -164,7 +171,6 @@ func (u *ui) clipRowWidget(gtx layout.Context, i int) layout.Dimensions {
 	c := u.clips[i]
 	row := &u.clipRows[i]
 
-	// 先处理这一行的按钮点击
 	if row.copy.Clicked(gtx) {
 		_ = setClipboard(c.Content)
 	}
@@ -173,35 +179,48 @@ func (u *ui) clipRowWidget(gtx layout.Context, i int) layout.Dimensions {
 		u.clipKey = "" // 强制下一帧重建列表
 	}
 
-	// 行间分隔线，让每条记录分得开
-	defer func() {
-		line := clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(1))}
-		defer line.Push(gtx.Ops).Pop()
-		paint.Fill(gtx.Ops, color.NRGBA{R: 0xEF, G: 0xF2, B: 0xF0, A: 0xFF})
-	}()
+	// 每条做成一张浅灰圆角卡片，和手机端 .texts li 一致：
+	// 内容在上、来源·时间在下、按钮靠右
+	return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		m := op.Record(gtx.Ops)
+		dims := layout.Inset{
+			Top: unit.Dp(9), Bottom: unit.Dp(9),
+			Left: unit.Dp(12), Right: unit.Dp(8),
+		}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							l := material.Body2(u.th, c.Content)
+							l.Color = uiInk
+							l.TextSize = unit.Sp(13)
+							l.MaxLines = 3
+							return l.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(4)}.Layout),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							l := material.Body2(u.th, c.From+" · "+c.At.Format("01-02 15:04"))
+							l.Color = uiMuted
+							l.TextSize = unit.Sp(11)
+							return l.Layout(gtx)
+						}),
+					)
+				}),
+				layout.Rigid(u.linkButton(&row.copy, "复制")),
+				layout.Rigid(u.linkButton(&row.del, "删除")),
+			)
+		})
+		call := m.Stop()
 
-	return layout.Inset{Top: unit.Dp(7), Bottom: unit.Dp(7)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-			// 内容放在最左边，和上面「最近记录」标题左对齐。
-			// 来源标签挪到右边去了 —— 放前面会空出一截，看着不整齐。
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				l := material.Body2(u.th, clipPreview(c.Content))
-				l.Color = uiInk
-				l.MaxLines = 1
-				return l.Layout(gtx)
-			}),
-			layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
-			// 来源 + 时间，和手机端一样合成一栏
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(124)), gtx.Dp(unit.Dp(20))))
-				l := material.Body2(u.th, c.From+" · "+c.At.Format("01-02 15:04"))
-				l.Color = uiMuted
-				l.TextSize = unit.Sp(12)
-				return l.Layout(gtx)
-			}),
-			layout.Rigid(u.linkButton(&row.copy, "复制")),
-			layout.Rigid(u.linkButton(&row.del, "删除")),
-		)
+		r := gtx.Dp(unit.Dp(10))
+		rr := clip.RRect{
+			Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y),
+			NW:   r, NE: r, SW: r, SE: r,
+		}
+		paint.FillShape(gtx.Ops, color.NRGBA{R: 0xF4, G: 0xF6, B: 0xF5, A: 0xFF}, rr.Op(gtx.Ops))
+
+		call.Add(gtx.Ops)
+		return dims
 	})
 }
 

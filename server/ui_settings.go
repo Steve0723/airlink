@@ -35,7 +35,15 @@ func (u *ui) settingsPanel(gtx layout.Context) {
 	paintOverlay(gtx)
 
 	layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(600)), gtx.Dp(unit.Dp(602))))
+		// 窗口被拖小时面板跟着缩，别超出窗口被裁掉
+		w, h := gtx.Dp(unit.Dp(600)), gtx.Dp(unit.Dp(602))
+		if m := gtx.Constraints.Max; w > m.X {
+			w = m.X
+		}
+		if m := gtx.Constraints.Max; h > m.Y {
+			h = m.Y
+		}
+		gtx.Constraints = layout.Exact(image.Pt(w, h))
 		return u.card(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -51,6 +59,10 @@ func (u *ui) settingsPanel(gtx layout.Context) {
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
 
+				// 中间整块放进 List，窗口小时可以滚
+				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					return u.settingsScroll.Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				// ---------- 配对 ----------
 				layout.Rigid(u.sectionTitle("配对")),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
@@ -149,7 +161,7 @@ func (u *ui) settingsPanel(gtx layout.Context) {
 				// ---------- 已配对手机 ----------
 				layout.Rigid(u.sectionTitle("已配对的手机")),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if len(u.phones) == 0 {
 						return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							l := material.Body2(u.th, "还没有手机配对过")
@@ -159,6 +171,9 @@ func (u *ui) settingsPanel(gtx layout.Context) {
 					}
 					return u.phoneList.Layout(gtx, len(u.phones), func(gtx layout.Context, i int) layout.Dimensions {
 						return u.phoneRowWidget(gtx, i)
+					})
+				}),
+						)
 					})
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),

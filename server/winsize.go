@@ -14,6 +14,7 @@ var (
 	procGetDC            = user32.NewProc("GetDC")
 	procGetDeviceCaps    = gdi32.NewProc("GetDeviceCaps")
 	procReleaseDC        = user32.NewProc("ReleaseDC")
+	procSetWindowPos     = user32.NewProc("SetWindowPos")
 )
 
 const (
@@ -43,25 +44,73 @@ func logicalScreen() (int, int) {
 
 // preferredWindowSize 按屏幕面积的三分之一算初始窗口。
 // 宽高各取 sqrt(1/3)≈0.58，这样面积正好是三分之一。
-// 太小的屏幕上界面会挤，所以有下限；超大屏上别开成巨无霸，所以有上限。
+//
+// 注意：app.Size 的值会被当成**物理像素**（200% 缩放的机器上实测过：
+// 传 904 得到 917 物理宽的窗口，也就是 458 逻辑宽）。
+// 所以这里必须用屏幕的物理尺寸来算，不能先除 DPI，
+// 否则窗口只有预期的一半大，面板会被裁掉。
 func preferredWindowSize() (unit.Dp, unit.Dp) {
-	sw, sh := logicalScreen()
+	sw, _, _ := procGetSystemMetrics.Call(smCXScreen)
+	sh, _, _ := procGetSystemMetrics.Call(smCYScreen)
 
-	w := int(float64(sw) * 0.58)
-	h := int(float64(sh) * 0.58)
+	w := int(float64(sw) * 0.50)
+	h := int(float64(sh) * 0.60)
 
-	if w < 880 {
-		w = 880
+	// 下限保证设置面板（602dp 高 = 1204 物理）放得下，
+	// 但不能超过屏幕的 90%，否则小屏上反而溢出。
+	// 上限不需要：0.58 本身就把窗口限制在屏幕面积的三分之一。
+	minW, minH := 1400, 1260
+	if capW := int(float64(sw) * 0.9); minW > capW {
+		minW = capW
 	}
-	if h < 620 {
-		h = 620
+	if capH := int(float64(sh) * 0.9); minH > capH {
+		minH = capH
 	}
-	if w > 1400 {
-		w = 1400
+	if w < minW {
+		w = minW
 	}
-	if h > 1000 {
-		h = 1000
+	if h < minH {
+		h = minH
 	}
 
 	return unit.Dp(w), unit.Dp(h)
+}
+
+// applyWindowSize 用 Win32 直接把窗口设成指定物理尺寸。
+//
+// app.Size 的单位在这台机器上换算得不对（传 904 得到 917 物理宽的窗口，
+// 传 1400 又是 1573，不成比例），结果窗口只有预期的一半，面板被裁掉。
+// 直接在窗口建好后 SetWindowPos 最可靠。
+//
+// 必须在独立线程调用：SetWindowPos 会同步发 WM_SIZE，
+// 而窗口过程是 Gio 的 Go 回调，在界面线程里调会嵌套。
+func applyWindowSize(hwnd uintptr) {
+	if hwnd == 0 {
+		return
+	}
+	sw, _, _ := procGetSystemMetrics.Call(smCXScreen)
+	sh, _, _ := procGetSystemMetrics.Call(smCYScreen)
+
+	// 宽比高收得更紧：面板本来就窄（600dp），横向不需要那么多空间
+	w := int(float64(sw) * 0.50)
+	h := int(float64(sh) * 0.60)
+
+	// 下限：设置面板 602dp 高，200% 缩放下需要 1204 物理，留点边距
+	if minW := 1360; w < minW {
+		w = minW
+	}
+	if minH := 1260; h < minH {
+		h = minH
+	}
+	// 别超出屏幕
+	if capW := int(float64(sw) * 0.92); w > capW {
+		w = capW
+	}
+	if capH := int(float64(sh) * 0.92); h > capH {
+		h = capH
+	}
+
+	const swpNoZOrder = 0x0004
+	const swpNoMove = 0x0002
+	procSetWindowPos.Call(hwnd, 0, 0, 0, uintptr(w), uintptr(h), swpNoZOrder|swpNoMove)
 }

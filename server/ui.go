@@ -93,6 +93,9 @@ type ui struct {
 
 	// 最近记录条数选项
 	limitChips [5]widget.Clickable
+
+	// 设置面板中间的滚动区
+	settingsScroll layout.List
 	backdropTags                    [4]int // 菜单外四个方向的点击区 tag
 
 	// ---------- 面板 ----------
@@ -137,6 +140,7 @@ func runUI(srv *Server) {
 
 	u := &ui{srv: srv, th: th, selected: -1, interactive: true}
 	u.list.Axis = layout.Vertical
+	u.settingsScroll.Axis = layout.Vertical
 	mainUI = u
 
 	go func() {
@@ -147,7 +151,8 @@ func runUI(srv *Server) {
 		w.Option(
 			app.Title("AirLink"),
 			app.Size(ww, wh),
-			app.MinSize(unit.Dp(760), unit.Dp(520)),
+			// 同样按物理像素：760x520 逻辑 = 1520x1040 物理
+			app.MinSize(unit.Dp(1520), unit.Dp(1040)),
 		)
 
 		// 文件列表和配对码都可能被手机那边改动，定时重绘
@@ -170,6 +175,8 @@ func runUI(srv *Server) {
 					dropReady = true
 					hwnd := findOwnWindow()
 					u.hwnd = hwnd
+					// 尺寸用 Win32 强制设，app.Size 的单位换算不可靠
+					go applyWindowSize(hwnd)
 					if err := enableOLEDrop(hwnd); err != nil {
 						verbosef("拖放注册失败: %v", err)
 					}
@@ -229,7 +236,9 @@ func snapshotUI(srv *Server, w, h int, scale float32, path, panel string) error 
 	}
 	u := &ui{srv: srv, th: th, selected: -1, interactive: true}
 	u.list.Axis = layout.Vertical
+	u.settingsScroll.Axis = layout.Vertical
 	u.clipList.Axis = layout.Vertical
+	u.settingsScroll.Axis = layout.Vertical
 	u.refreshFiles()
 	switch panel {
 	case "text":
