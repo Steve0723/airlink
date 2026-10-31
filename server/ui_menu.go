@@ -4,6 +4,8 @@ import (
 	"image"
 	"image/color"
 
+	"gioui.org/io/event"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -17,8 +19,9 @@ import (
 // Gio 没有内置的右键菜单，得自己处理 pointer 的次键事件 + 画浮层。
 type contextMenu struct {
 	visible bool
-	row     int        // 目标行，-1 表示没有
-	pos     image.Point // 弹出的位置（窗口客户区坐标，dp）
+	row     int         // 目标行，-1 表示没有
+	pos     image.Point // 弹出的位置（窗口客户区坐标，像素）
+	size    image.Point // 上次画出来的尺寸，用来给「点外面关闭」划边界
 }
 
 // menuItem 画一个菜单项。
@@ -103,6 +106,16 @@ func (u *ui) drawContextMenu(gtx layout.Context) {
 		pos.Y = 0
 	}
 
+	// 先在菜单四周铺四块透明区域，点它们就关菜单。
+	// 不能铺一整块 —— 那会把菜单项自己的点击也吞掉。
+	// 菜单刚弹出的那一帧还没有尺寸，用估算高度兜底，
+	// 否则底部那块会盖住菜单自己。
+	menuH := u.ctxMenu.size.Y
+	if menuH <= 0 {
+		menuH = gtx.Dp(unit.Dp(190))
+	}
+	u.contextMenuBackdrop(gtx, image.Rect(pos.X, pos.Y, pos.X+mw, pos.Y+menuH))
+
 	stack := op.Offset(pos).Push(gtx.Ops)
 	defer stack.Pop()
 
@@ -111,6 +124,43 @@ func (u *ui) drawContextMenu(gtx layout.Context) {
 		Max: image.Pt(mw, maxY-pos.Y),
 	}
 	u.contextMenuWidget(gtx)
+}
+
+// contextMenuBackdrop 在菜单外的四个方向上铺点击区，点一下就关菜单。
+func (u *ui) contextMenuBackdrop(gtx layout.Context, menu image.Rectangle) {
+	maxX := gtx.Constraints.Max.X
+	maxY := gtx.Constraints.Max.Y
+
+	areas := [4]image.Rectangle{
+		image.Rect(0, 0, maxX, menu.Min.Y),                                  // 上
+		image.Rect(0, menu.Max.Y, maxX, maxY),                               // 下
+		image.Rect(0, menu.Min.Y, menu.Min.X, menu.Max.Y),                   // 左
+		image.Rect(menu.Max.X, menu.Min.Y, maxX, menu.Max.Y),                // 右
+	}
+
+	for i := range areas {
+		r := areas[i]
+		if r.Dx() <= 0 || r.Dy() <= 0 {
+			continue
+		}
+		// 先收事件
+		for {
+			ev, ok := gtx.Event(pointer.Filter{
+				Target: &u.backdropTags[i],
+				Kinds:  pointer.Press,
+			})
+			if !ok {
+				break
+			}
+			if _, ok := ev.(pointer.Event); ok {
+				u.ctxMenu.visible = false
+			}
+		}
+		// 再注册区域，供下一帧用
+		stack := clip.Rect(r).Push(gtx.Ops)
+		event.Op(gtx.Ops, &u.backdropTags[i])
+		stack.Pop()
+	}
 }
 
 // contextMenuWidget 画右键菜单的浮层。
@@ -161,6 +211,7 @@ func (u *ui) contextMenuWidget(gtx layout.Context) layout.Dimensions {
 	paint.FillShape(gtx.Ops, color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF}, inner.Op(gtx.Ops))
 
 	call.Add(gtx.Ops)
+	u.ctxMenu.size = dims.Size
 	return dims
 }
 

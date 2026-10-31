@@ -84,9 +84,10 @@ type ui struct {
 	btnAddFile, btnOpen, btnReveal, btnDeleteFile widget.Clickable
 
 	// 右键菜单
-	ctxMenu                          contextMenu
-	ctxOpen, ctxReveal, ctxCopyName  widget.Clickable
-	ctxDelete                        widget.Clickable
+	ctxMenu                         contextMenu
+	ctxOpen, ctxReveal, ctxCopyName widget.Clickable
+	ctxDelete                       widget.Clickable
+	backdropTags                    [4]int // 菜单外四个方向的点击区 tag
 
 	// ---------- 面板 ----------
 	showText     bool
@@ -334,7 +335,7 @@ func (u *ui) cursorPos(gtx layout.Context) image.Point {
 // modalOpen 有浮层挡着时，主界面的按钮和列表都不该响应点击。
 // 面板只是「画」在上面，不会自动拦住事件，得自己判断。
 func (u *ui) modalOpen() bool {
-	return u.showText || u.showSettings
+	return u.showText || u.showSettings || u.ctxMenu.visible
 }
 
 // handleClicks 统一处理所有按钮，避免逻辑散在布局代码里。
