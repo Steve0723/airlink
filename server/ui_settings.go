@@ -35,10 +35,10 @@ func (u *ui) settingsPanel(gtx layout.Context) {
 	paintOverlay(gtx)
 
 	layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		// 同文本面板：按窗口百分比算
+		// 同文本面板：小窗口下几乎贴满
 		m := gtx.Constraints.Max
-		w := m.X * 70 / 100
-		h := m.Y * 92 / 100
+		gap := gtx.Dp(unit.Dp(8))
+		w, h := m.X-gap, m.Y-gap
 		if maxW := gtx.Dp(unit.Dp(680)); w > maxW {
 			w = maxW
 		}

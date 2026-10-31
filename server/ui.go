@@ -592,7 +592,7 @@ func (u *ui) addFile(path string) error {
 // card 画一张白色圆角卡片，内容带统一内边距。
 func (u *ui) card(gtx layout.Context, content layout.Widget) layout.Dimensions {
 	inner := func(gtx layout.Context) layout.Dimensions {
-		return layout.UniformInset(unit.Dp(18)).Layout(gtx, content)
+		return layout.UniformInset(unit.Dp(14)).Layout(gtx, content)
 	}
 
 	// 先排版拿到尺寸，再回头画背景，否则不知道圆角矩形要多大

@@ -68,8 +68,8 @@ func (u *ui) pillBody(gtx layout.Context, label string, filled, hovered, pressed
 func (u *ui) inputBox(gtx layout.Context, ed *widget.Editor, hint string) layout.Dimensions {
 	m := op.Record(gtx.Ops)
 	dims := layout.Inset{
-		Top: unit.Dp(9), Bottom: unit.Dp(9),
-		Left: unit.Dp(14), Right: unit.Dp(14),
+		Top: unit.Dp(7), Bottom: unit.Dp(7),
+		Left: unit.Dp(12), Right: unit.Dp(12),
 	}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		e := material.Editor(u.th, ed, hint)
 		e.Color = uiInk
@@ -96,12 +96,11 @@ func (u *ui) textPanel(gtx layout.Context) {
 	paint.Fill(gtx.Ops, color.NRGBA{R: 0x0F, G: 0x14, B: 0x12, A: 0x70})
 
 	layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		// 按窗口的百分比算，不用绝对 dp —— Gio 在不同 DPI 下
-		// 给的约束单位不一致，写死 dp 会导致面板比窗口还大被裁。
+		// 小窗口下几乎贴满，只留 8dp 让阴影能看出来
 		m := gtx.Constraints.Max
-		w := m.X * 72 / 100
-		h := m.Y * 82 / 100
-		// 大窗口时别放太大
+		gap := gtx.Dp(unit.Dp(8))
+		w, h := m.X-gap, m.Y-gap
+		// 大窗口时别铺满整个屏幕
 		if maxW := gtx.Dp(unit.Dp(760)); w > maxW {
 			w = maxW
 		}
@@ -137,7 +136,7 @@ func (u *ui) textPanel(gtx layout.Context) {
 						layout.Rigid(u.pillButton(&u.btnSend, "发送", true)),
 					)
 				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(12)}.Layout),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(9)}.Layout),
 
 				// 分类标签：文字互传 / 剪贴板
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -147,7 +146,7 @@ func (u *ui) textPanel(gtx layout.Context) {
 						layout.Rigid(u.tabButton(&u.tabClip, "剪贴板", 1)),
 					)
 				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 
 				// 记录标题行
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -259,11 +258,11 @@ func (u *ui) clipRowWidget(gtx layout.Context, i int) layout.Dimensions {
 		contentW = gtx.Dp(unit.Dp(80))
 	}
 
-	return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		m := op.Record(gtx.Ops)
 		dims := layout.Inset{
-			Top: unit.Dp(9), Bottom: unit.Dp(9),
-			Left: unit.Dp(12), Right: unit.Dp(8),
+			Top: unit.Dp(7), Bottom: unit.Dp(7),
+			Left: unit.Dp(10), Right: unit.Dp(6),
 		}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
