@@ -166,9 +166,9 @@ chmod +x AirLink-Relay-linux-amd64
 ./AirLink-Relay-linux-amd64 -addr :8080 -data ./data -key 你的密钥
 ```
 
-**方式二：Docker（推荐，自带 HTTPS）**
+**方式二：Docker + 你自己的 nginx（推荐）**
 
-需要 `relay/` 这个目录（含 `docker-compose.yml`、`Caddyfile`、`.env.example`）。
+需要 `relay/` 这个目录（`docker-compose.yml`、`Dockerfile`、`.env.example`）。
 没克隆仓库的话，先只取这个目录：
 
 ```bash
@@ -177,15 +177,42 @@ cd airlink/relay
 ```
 
 或者在 GitHub 上打开 [`relay/`](https://github.com/Steve0723/airlink/tree/main/relay)
-逐个下载那四个文件，放在同一个目录里。
-
-然后在一台有公网 IP 的服务器上，域名 A 记录指过来：
+逐个下载那几个文件，放在同一个目录里。
 
 ```bash
 cp .env.example .env      # 填域名，密钥用 openssl rand -hex 24 生成
-docker compose up -d      # Caddy 自动申请 HTTPS
+docker compose up -d
+```
+
+**relay 只绑 `127.0.0.1:8080`，不占 80/443**——HTTPS 由你服务器上已有的 nginx 负责，
+不会和它抢端口。加一段反代配置：
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name drop.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/drop.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/drop.example.com/privkey.pem;
+
+    client_max_body_size 2g;   # 和 relay 的上限保持一致
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+```bash
+nginx -t && systemctl reload nginx
 curl https://你的域名/healthz
 ```
+
+用 Caddy、Traefik 或别的反代也一样，把 `drop.example.com` 指到 `127.0.0.1:8080` 即可。
 
 **方式三：自己编译**
 

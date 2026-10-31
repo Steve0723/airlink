@@ -7,22 +7,10 @@ services:
       AIRLINK_RELAY_BASE: https://${DOMAIN:?请在 .env 里设置域名}
     volumes:
       - relay_data:/data
-
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    depends_on: [relay]
-    environment:
-      DOMAIN: ${DOMAIN}
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
+      # 只绑本地回环，由宿主机上已有的 nginx 反代进来。
+      # 不占 80/443，避免和 nginx 抢端口。
+      - "127.0.0.1:8080:8080"
 
 volumes:
   relay_data:
-  caddy_data:
-  caddy_config:
