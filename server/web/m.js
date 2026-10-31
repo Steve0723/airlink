@@ -166,9 +166,23 @@ async function refresh() {
       btn.className = "copy";
       btn.textContent = "复制";
       btn.onclick = () => copyText(item.content);
-      li.append(body, meta, btn);
+
+      const del = document.createElement("button");
+      del.className = "del";
+      del.textContent = "删除";
+      del.onclick = () => delClip(item.id);
+
+      li.append(body, meta, btn, del);
       list.appendChild(li);
     });
+  } catch {}
+}
+
+// 删除一条记录
+async function delClip(id) {
+  try {
+    await api("DELETE", `/api/v1/clipboard/${id}`);
+    refresh();
   } catch {}
 }
 

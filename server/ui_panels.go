@@ -131,7 +131,7 @@ func (u *ui) textPanel(gtx layout.Context) {
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							return u.inputBox(gtx, &u.textEditor, "输入要发送给手机的文字")
+							return u.inputBox(gtx, &u.textEditor, "")
 						}),
 						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 						layout.Rigid(u.pillButton(&u.btnSend, "发送", true)),
@@ -235,7 +235,7 @@ func (u *ui) clipRowWidget(gtx layout.Context, i int) layout.Dimensions {
 					)
 				}),
 				layout.Rigid(u.linkButton(&row.copy, "复制")),
-				layout.Rigid(u.linkButton(&row.del, "删除")),
+				layout.Rigid(u.linkButtonColored(&row.del, "删除", uiDanger)),
 			)
 		})
 		call := m.Stop()

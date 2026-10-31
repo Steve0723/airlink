@@ -33,7 +33,8 @@ import (
 
 // 主题色，和托盘图标保持一致。
 var (
-	uiGreen = color.NRGBA{R: 0x1D, G: 0x9E, B: 0x75, A: 0xFF}
+	uiGreen  = color.NRGBA{R: 0x1D, G: 0x9E, B: 0x75, A: 0xFF}
+	uiDanger = color.NRGBA{R: 0xD1, G: 0x4B, B: 0x4B, A: 0xFF}
 	uiInk   = color.NRGBA{R: 0x17, G: 0x1B, B: 0x19, A: 0xFF}
 	uiMuted = color.NRGBA{R: 0x6B, G: 0x72, B: 0x80, A: 0xFF}
 	uiPage  = color.NRGBA{R: 0xFA, G: 0xFB, B: 0xFA, A: 0xFF}
@@ -822,11 +823,16 @@ func addCircle(p *clip.Path, cx, cy, r float32, seg int) {
 
 // linkButton 是配对码旁边那种小文字按钮。
 func (u *ui) linkButton(c *widget.Clickable, label string) layout.Widget {
+	return u.linkButtonColored(c, label, uiGreen)
+}
+
+// linkButtonColored 同 linkButton，但可以指定颜色（删除用红色）
+func (u *ui) linkButtonColored(c *widget.Clickable, label string, col color.NRGBA) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.UniformInset(unit.Dp(4)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				l := material.Body2(u.th, label)
-				l.Color = uiGreen
+				l.Color = col
 				return l.Layout(gtx)
 			})
 		})

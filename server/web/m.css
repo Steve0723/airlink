@@ -176,19 +176,27 @@ h2 span { color: var(--muted); font-weight: 400; font-size: 12px; }
 
 .note { color: var(--muted); font-size: 11px; margin: 8px 0 0; }
 
-.texts li { position: relative; padding-right: 62px; }
-.texts .copy {
+.texts li { position: relative; padding-right: 112px; }
+.texts .copy, .texts .del {
   position: absolute;
-  right: 8px; top: 50%;
+  top: 50%;
   transform: translateY(-50%);
-  border: 1px solid var(--accent);
   background: #fff;
-  color: var(--accent-dark);
   font-size: 12px;
   font-family: inherit;
   padding: 4px 10px;
   border-radius: 7px;
   cursor: pointer;
+}
+.texts .copy {
+  right: 58px;
+  border: 1px solid var(--accent);
+  color: var(--accent-dark);
+}
+.texts .del {
+  right: 8px;
+  border: 1px solid #d14b4b;
+  color: #d14b4b;
 }
 
 .tip {
