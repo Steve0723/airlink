@@ -152,6 +152,22 @@ AirLink 的处理方式是自动兜底，不是让你手动切换：
 
 ### 部署 relay
 
+**方式一：直接下载**
+
+从 [Releases](https://github.com/Steve0723/airlink/releases) 下载对应平台的文件，不用装 Go：
+
+| 平台 | 文件 |
+|---|---|
+| Linux | `AirLink-Relay-linux-amd64` |
+| Windows | `AirLink-Relay-windows.exe` |
+
+```bash
+chmod +x AirLink-Relay-linux-amd64
+./AirLink-Relay-linux-amd64 -addr :8080 -data ./data -key 你的密钥
+```
+
+**方式二：Docker（推荐，自带 HTTPS）**
+
 一台有公网 IP 的服务器，域名 A 记录指过来：
 
 ```bash
@@ -161,9 +177,12 @@ docker compose up -d      # Caddy 自动申请 HTTPS
 curl https://你的域名/healthz
 ```
 
-不用 Docker 也行，`relay/` 是纯标准库的 Go 程序：
+**方式三：自己编译**
+
+`relay/` 是纯标准库的 Go 程序：
 
 ```bash
+cd relay
 go build -o relay . && ./relay -addr :8080 -data ./data -key 你的密钥
 ```
 
