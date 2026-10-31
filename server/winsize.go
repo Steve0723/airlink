@@ -2,6 +2,7 @@ package main
 
 import (
 	"syscall"
+	"time"
 	"unsafe"
 
 	"gioui.org/unit"
@@ -54,33 +55,19 @@ func logicalScreen() (int, int) {
 // 所以这里必须用屏幕的物理尺寸来算，不能先除 DPI，
 // 否则窗口只有预期的一半大，面板会被裁掉。
 func preferredWindowSize(savedW, savedH int) (unit.Dp, unit.Dp) {
-	// 用户上次拖过的大小优先，但要卡上限：
-	// 某次拖到接近全屏的话，之后每次打开都会溢出屏幕。
-	if savedW > 300 && savedH > 240 {
-		sw, _, _ := procGetSystemMetrics.Call(smCXScreen)
-		sh, _, _ := procGetSystemMetrics.Call(smCYScreen)
-		// 上限收到 60%：之前 75% 太松，用户拖到 72% 就顶满屏幕了
-		maxW := int(float64(sw) * 0.60)
-		maxH := int(float64(sh) * 0.60)
-		if savedW > maxW {
-			savedW = maxW
-		}
-		if savedH > maxH {
-			savedH = maxH
-		}
-		return unit.Dp(savedW), unit.Dp(savedH)
-	}
-
-	// 实测 app.Size 建出来的窗口就是这么多物理像素（900 -> 912 物理），
-	// 所以用物理屏幕尺寸算。0.577 = sqrt(1/3)，面积正好是屏幕三分之一。
+	// app.Size 收的就是物理像素，1:1。实测传 1138 得到 1138 物理宽。
+	//
+	// 之前所有的混乱都来自 forceWindowSize：它用 SetWindowPos 事后校正，
+	// 但 Gio 的窗口管理每帧会把尺寸改回去，两边打架，结果时大时小。
+	// 去掉之后这里就是唯一的尺寸来源，稳定可预测。
+	//
+	// 0.365 / 0.343 是用户确认的比例，落成约 569x357 dp（屏幕 36%x34%）。
 	sw, _, _ := procGetSystemMetrics.Call(smCXScreen)
 	sh, _, _ := procGetSystemMetrics.Call(smCYScreen)
 
-	// 用户确认的尺寸：569x357 dp = 1138x714 物理，占屏幕 36%x34%
 	w := int(float64(sw) * 0.365)
 	h := int(float64(sh) * 0.343)
 
-	// 下限只防呆：太小的窗口界面会挤成一团
 	if minW := 1000; w < minW {
 		w = minW
 	}
@@ -131,14 +118,42 @@ func forceWindowSize(hwnd uintptr, targetW, targetH int) {
 	}
 	const swpNoZOrder = 0x0004
 	const swpNoMove = 0x0002
+	const flags = swpNoZOrder | swpNoMove
 
-	// SetWindowPos 在这台 200% 缩放的机器上会被 DPI 虚拟化：
-	// 传 1138 实际只得到 569，正好差一半。所以这里乘以 2 补偿。
-	// （闭环修正行不通——SetWindowPos 是异步的，紧接着 GetClientRect
-	// 读到的还是旧值，按比例算会越改越小。）
-	procSetWindowPos.Call(hwnd, 0, 0, 0,
-		uintptr(targetW*2), uintptr(targetH*2),
-		swpNoZOrder|swpNoMove)
+	// SetWindowPos 在这台 200% 缩放的机器上会被 DPI 虚拟化，
+	// 而且比例不固定：传 1138 有时得到 569（0.5 倍），有时得到 1872（0.82 倍）。
+	// 所以只能闭环：设一次、等一下、读回实际尺寸、按比例再设。
+	// 关键是每次都要 sleep —— SetWindowPos 是异步的，
+	// 不等待就读到旧值，按比例反算会越改越小。
+	w, h := targetW, targetH
+	for i := 0; i < 5; i++ {
+		procSetWindowPos.Call(hwnd, 0, 0, 0, uintptr(w), uintptr(h), flags)
+		time.Sleep(120 * time.Millisecond)
+
+		var r winRect
+		if ok, _, _ := procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&r))); ok == 0 {
+			return
+		}
+		aw, ah := int(r.Right-r.Left), int(r.Bottom-r.Top)
+		if aw <= 0 || ah <= 0 {
+			return
+		}
+
+		dw, dh := aw-targetW, ah-targetH
+		if dw < 0 {
+			dw = -dw
+		}
+		if dh < 0 {
+			dh = -dh
+		}
+		if dw <= 8 && dh <= 8 {
+			return
+		}
+
+		// 按「目标/实际」的比例修正下一次的输入值
+		w = w * targetW / aw
+		h = h * targetH / ah
+	}
 }
 
 // clampWindowSize 把尺寸夹到屏幕 60% 以内。

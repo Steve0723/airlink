@@ -186,14 +186,6 @@ func runUI(srv *Server) {
 			switch e := e.(type) {
 			case app.DestroyEvent:
 				// 窗口关掉前把尺寸存下来，下次打开还是这个大小
-				if u.sizeReady && u.lastW > 300 && u.lastH > 240 {
-					w, h := clampWindowSize(u.lastW, u.lastH)
-					u.srv.mu.Lock()
-					u.srv.state.WinW = w
-					u.srv.state.WinH = h
-					_ = saveJSON(u.srv.cfg, u.srv.state)
-					u.srv.mu.Unlock()
-				}
 				os.Exit(0)
 			case app.FrameEvent:
 				// 第一帧时窗口才真正建好，这时候才能挂 OLE 拖放
@@ -201,18 +193,6 @@ func runUI(srv *Server) {
 					dropReady = true
 					hwnd := findOwnWindow()
 					u.hwnd = hwnd
-					// app.Size 的换算不可预测，建好窗口后强制设成目标尺寸。
-					// 这里也要过一遍上限，不能直接用 state 的原始值。
-					if srv.state.WinW > 300 && srv.state.WinH > 240 {
-						tw, th := clampWindowSize(srv.state.WinW, srv.state.WinH)
-						go func() {
-							forceWindowSize(hwnd, tw, th)
-							time.Sleep(800 * time.Millisecond)
-							u.sizeReady = true
-						}()
-					} else {
-						u.sizeReady = true
-					}
 					if err := enableOLEDrop(hwnd); err != nil {
 						verbosef("拖放注册失败: %v", err)
 					}
