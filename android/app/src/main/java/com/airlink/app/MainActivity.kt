@@ -377,11 +377,22 @@ private fun HomeScreen(
 
     // 照片走系统选择器：用户自己挑，不擅自上传整个相册。
     // 安卓 11+ 用系统 Photo Picker，不需要相册权限。
+    // 上限别开太大：部分机型的 Photo Picker 吃不下 200 张，会直接抛异常。
     val photoPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia(200)
+        ActivityResultContracts.PickMultipleVisualMedia(20)
     ) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
-        TransferService.start(ctx, device, uris.map { it.toString() })
+        // Photo Picker 给的授权是临时的，能申请持久化就申请，失败也不影响这次
+        uris.forEach { u ->
+            runCatching {
+                ctx.contentResolver.takePersistableUriPermission(
+                    u, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+        }
+        // 服务起不来时给提示，不要直接把 App 带崩
+        runCatching { TransferService.start(ctx, device, uris.map { it.toString() }) }
+            .onFailure { toast(ctx, "发送失败：" + it.message.orEmpty()) }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -465,9 +476,11 @@ private fun HomeScreen(
                     }
                     OutlinedButton(
                         onClick = {
-                            photoPicker.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
+                            runCatching {
+                                photoPicker.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }.onFailure { toast(ctx, "打不开相册：" + it.message.orEmpty()) }
                         },
                         modifier = Modifier.height(32.dp),
                         shape = RoundedCornerShape(16.dp),

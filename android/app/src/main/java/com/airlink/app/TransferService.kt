@@ -61,8 +61,18 @@ class TransferService : Service() {
             return START_NOT_STICKY
         }
 
-        createChannel()
-        startForegroundCompat("准备传输…")
+        // 前台服务起不来时（系统限制、权限被撤）只提示，不能让整个 App 崩
+        try {
+            createChannel()
+            startForegroundCompat("准备传输…")
+        } catch (e: Throwable) {
+            TransferBus.running.value = false
+            TransferBus.message.value =
+                "无法启动传输服务：" + (e.message ?: e.javaClass.simpleName)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         TransferBus.running.value = true
         TransferBus.message.value = "正在发送 ${uris.size} 个文件"
 
