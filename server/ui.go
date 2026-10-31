@@ -104,6 +104,9 @@ type ui struct {
 
 	// 最近一次测到的真实客户区尺寸（物理像素），关窗时存进配置
 	lastW, lastH int
+	// 窗口尺寸稳定后才开始记录 lastW/lastH。
+	// 否则会记下 app.Size 刚建出来的中间尺寸（比目标大很多）。
+	sizeReady bool
 	backdropTags                    [4]int // 菜单外四个方向的点击区 tag
 
 	// ---------- 面板 ----------
@@ -183,10 +186,11 @@ func runUI(srv *Server) {
 			switch e := e.(type) {
 			case app.DestroyEvent:
 				// 窗口关掉前把尺寸存下来，下次打开还是这个大小
-				if u.lastW > 300 && u.lastH > 240 {
+				if u.sizeReady && u.lastW > 300 && u.lastH > 240 {
+					w, h := clampWindowSize(u.lastW, u.lastH)
 					u.srv.mu.Lock()
-					u.srv.state.WinW = u.lastW
-					u.srv.state.WinH = u.lastH
+					u.srv.state.WinW = w
+					u.srv.state.WinH = h
 					_ = saveJSON(u.srv.cfg, u.srv.state)
 					u.srv.mu.Unlock()
 				}
@@ -197,8 +201,18 @@ func runUI(srv *Server) {
 					dropReady = true
 					hwnd := findOwnWindow()
 					u.hwnd = hwnd
-					// app.Size 的换算不可预测，建好窗口后强制设成目标尺寸
-					go forceWindowSize(hwnd, srv.state.WinW, srv.state.WinH)
+					// app.Size 的换算不可预测，建好窗口后强制设成目标尺寸。
+					// 这里也要过一遍上限，不能直接用 state 的原始值。
+					if srv.state.WinW > 300 && srv.state.WinH > 240 {
+						tw, th := clampWindowSize(srv.state.WinW, srv.state.WinH)
+						go func() {
+							forceWindowSize(hwnd, tw, th)
+							time.Sleep(800 * time.Millisecond)
+							u.sizeReady = true
+						}()
+					} else {
+						u.sizeReady = true
+					}
 					if err := enableOLEDrop(hwnd); err != nil {
 						verbosef("拖放注册失败: %v", err)
 					}
@@ -329,9 +343,12 @@ func loadUIFont() []font.FontFace {
 }
 
 func (u *ui) layout(gtx layout.Context) layout.Dimensions {
-	// 记下真实客户区尺寸，窗口关闭时写进配置
-	if w, h := realClientSize(u.hwnd); w > 0 {
-		u.lastW, u.lastH = w, h
+	// 记下真实客户区尺寸，窗口关闭时写进配置。
+	// 只在尺寸稳定后记，否则会存下 forceWindowSize 生效前的中间值。
+	if u.sizeReady {
+		if w, h := realClientSize(u.hwnd); w > 0 {
+			u.lastW, u.lastH = w, h
+		}
 	}
 
 	u.handleClicks(gtx)

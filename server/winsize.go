@@ -140,3 +140,19 @@ func forceWindowSize(hwnd uintptr, targetW, targetH int) {
 		uintptr(targetW*2), uintptr(targetH*2),
 		swpNoZOrder|swpNoMove)
 }
+
+// clampWindowSize 把尺寸夹到屏幕 60% 以内。
+// app.Size 和 forceWindowSize 两条路径都必须过一遍，
+// 之前只在 app.Size 那边做了限制，forceWindowSize 拿着未修正的
+// 原始值直接设，上限形同虚设。
+func clampWindowSize(w, h int) (int, int) {
+	sw, _, _ := procGetSystemMetrics.Call(smCXScreen)
+	sh, _, _ := procGetSystemMetrics.Call(smCYScreen)
+	if maxW := int(float64(sw) * 0.60); w > maxW {
+		w = maxW
+	}
+	if maxH := int(float64(sh) * 0.60); h > maxH {
+		h = maxH
+	}
+	return w, h
+}
