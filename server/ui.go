@@ -197,6 +197,8 @@ func runUI(srv *Server) {
 					dropReady = true
 					hwnd := findOwnWindow()
 					u.hwnd = hwnd
+					// app.Size 的换算不可预测，建好窗口后强制设成目标尺寸
+					go forceWindowSize(hwnd, srv.state.WinW, srv.state.WinH)
 					if err := enableOLEDrop(hwnd); err != nil {
 						verbosef("拖放注册失败: %v", err)
 					}

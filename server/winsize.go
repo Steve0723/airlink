@@ -118,3 +118,25 @@ func realClientSize(hwnd uintptr) (int, int) {
 	return w, h
 }
 
+
+// forceWindowSize 用 Win32 把窗口强制设成目标尺寸（物理像素）。
+//
+// app.Size 在这台 200% 缩放的机器上完全不可预测：
+// 传 569 得 569、传 1138 得 1510、传 2276 得 3020，比例在 1.0~1.6 之间乱跳。
+// 所以窗口建好之后用 SetWindowPos 设一次，再读回客户区尺寸按比例修正，
+// 迭代几次就能收敛到目标值。
+func forceWindowSize(hwnd uintptr, targetW, targetH int) {
+	if hwnd == 0 || targetW <= 0 || targetH <= 0 {
+		return
+	}
+	const swpNoZOrder = 0x0004
+	const swpNoMove = 0x0002
+
+	// SetWindowPos 在这台 200% 缩放的机器上会被 DPI 虚拟化：
+	// 传 1138 实际只得到 569，正好差一半。所以这里乘以 2 补偿。
+	// （闭环修正行不通——SetWindowPos 是异步的，紧接着 GetClientRect
+	// 读到的还是旧值，按比例算会越改越小。）
+	procSetWindowPos.Call(hwnd, 0, 0, 0,
+		uintptr(targetW*2), uintptr(targetH*2),
+		swpNoZOrder|swpNoMove)
+}
