@@ -541,10 +541,13 @@ func (u *ui) tile(c *widget.Clickable, label string) layout.Widget {
 		size := image.Pt(gtx.Dp(unit.Dp(92)), gtx.Dp(unit.Dp(64)))
 		gtx.Constraints = layout.Exact(size)
 
-		return material.Clickable(gtx, c, func(gtx layout.Context) layout.Dimensions {
+		return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			bg := uiTile
 			if c.Hovered() {
 				bg = color.NRGBA{R: 0xE2, G: 0xE6, B: 0xE3, A: 0xFF}
+			}
+			if c.Pressed() {
+				bg = color.NRGBA{R: 0xD4, G: 0xDA, B: 0xD6, A: 0xFF}
 			}
 			r := gtx.Dp(unit.Dp(12))
 			rr := clip.RRect{
@@ -664,7 +667,7 @@ func addCircle(p *clip.Path, cx, cy, r float32, seg int) {
 // linkButton 是配对码旁边那种小文字按钮。
 func (u *ui) linkButton(c *widget.Clickable, label string) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
-		return material.Clickable(gtx, c, func(gtx layout.Context) layout.Dimensions {
+		return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.UniformInset(unit.Dp(4)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				l := material.Body2(u.th, label)
 				l.Color = uiGreen
@@ -759,7 +762,7 @@ func (u *ui) fileRow(gtx layout.Context, i int, f FileEntry) layout.Dimensions {
 	selected := u.selected == i
 
 	// Clickable 必须先 Layout 才会更新内部状态，所以在回调里判断点击
-	return material.Clickable(gtx, row, func(gtx layout.Context) layout.Dimensions {
+	return row.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		if row.Clicked(gtx) {
 			u.selected = i
 			selected = true
@@ -794,10 +797,13 @@ func (u *ui) fileRow(gtx layout.Context, i int, f FileEntry) layout.Dimensions {
 		call := m.Stop()
 
 		// 选中和悬停时铺一层底色，鼠标移过去能看出哪行被选中
-		if selected || row.Hovered() {
+		if selected || row.Hovered() || row.Pressed() {
 			bg := color.NRGBA{R: 0xF2, G: 0xF7, B: 0xF4, A: 0xFF}
 			if selected {
 				bg = color.NRGBA{R: 0xE6, G: 0xF3, B: 0xED, A: 0xFF}
+			}
+			if row.Pressed() {
+				bg = color.NRGBA{R: 0xDD, G: 0xEB, B: 0xE4, A: 0xFF}
 			}
 			r := gtx.Dp(unit.Dp(8))
 			rr := clip.RRect{

@@ -257,7 +257,7 @@ func paintOverlay(gtx layout.Context) {
 
 // pillStyled 按指定配色画一个胶囊按钮。
 func (u *ui) pillStyled(gtx layout.Context, c *widget.Clickable, label string, bg, fg color.NRGBA) layout.Dimensions {
-	return material.Clickable(gtx, c, func(gtx layout.Context) layout.Dimensions {
+	return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		m := op.Record(gtx.Ops)
 		dims := layout.Inset{
 			Top: unit.Dp(7), Bottom: unit.Dp(7),
@@ -304,6 +304,10 @@ func (u *ui) chip(c *widget.Clickable, selected bool, label string) layout.Widge
 		bg, fg := uiTile, uiInk
 		if selected {
 			bg, fg = uiGreen, color.NRGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF}
+		} else if c.Pressed() {
+			bg = color.NRGBA{R: 0xD4, G: 0xDA, B: 0xD6, A: 0xFF}
+		} else if c.Hovered() {
+			bg = color.NRGBA{R: 0xE2, G: 0xE6, B: 0xE3, A: 0xFF}
 		}
 		return u.pillStyled(gtx, c, label, bg, fg)
 	}
