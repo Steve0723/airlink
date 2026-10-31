@@ -267,8 +267,11 @@ func (u *ui) clipRowWidget(gtx layout.Context, i int) layout.Dimensions {
 		}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					gtx.Constraints = layout.Exact(image.Pt(contentW, gtx.Dp(unit.Dp(38))))
-					return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
+					// 只限宽度，高度让它按内容自适应 ——
+					// 之前写死 38dp，内容占两行就把下面的「来源·时间」挤没了
+					gtx.Constraints.Min.X = contentW
+					gtx.Constraints.Max.X = contentW
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							l := material.Body2(u.th, c.Content)
 							l.Color = uiInk
