@@ -8,7 +8,6 @@ import (
 	"image/png"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -153,16 +152,23 @@ func runUI(srv *Server) {
 					}
 				}
 
-				// 拖进来的文件在界面线程处理，避免和布局并发写状态
-				select {
-				case paths := <-dropCh:
+				// 拖进来和选择框选的文件都在界面线程处理，避免和布局并发写状态
+				for {
+					var paths []string
+					select {
+					case paths = <-dropCh:
+					case paths = <-pickedFiles:
+					default:
+					}
+					if paths == nil {
+						break
+					}
 					for _, p := range paths {
 						if err := u.addFile(p); err != nil {
-							verbosef("拖入文件失败 %s: %v", p, err)
+							verbosef("添加文件失败 %s: %v", p, err)
 						}
 					}
 					u.fileKey = ""
-				default:
 				}
 
 				gtx := app.NewContext(&ops, e)
@@ -365,7 +371,7 @@ func (u *ui) openSelected() {
 	if !ok {
 		return
 	}
-	if err := exec.Command("explorer", p).Start(); err != nil {
+	if err := openPath(p); err != nil {
 		verbosef("打开失败: %v", err)
 	}
 }
@@ -376,7 +382,7 @@ func (u *ui) revealSelected() {
 	if !ok {
 		return
 	}
-	if err := exec.Command("explorer", "/select,"+p).Start(); err != nil {
+	if err := revealPath(p); err != nil {
 		verbosef("定位失败: %v", err)
 	}
 }
@@ -406,18 +412,28 @@ func (u *ui) pushClipboard() {
 	u.clipKey = ""
 }
 
-// pickFiles 打开系统文件选择框，把选中的文件加进列表。
+// pickedFiles 把文件选择框的结果从工作线程交回界面线程
+var pickedFiles = make(chan []string, 1)
+
+// pickFiles 打开系统文件选择框。
+//
+// GetOpenFileNameW 是模态对话框，内部跑自己的消息循环，并给 owner 窗口发消息。
+// 在 Gio 的界面线程里直接调，那些消息会调进 Gio 的 Go 回调 —— 嵌套调用直接崩。
+// 所以丢到独立 goroutine，owner 传 0（没有 owner 就不会给 Gio 的窗口发消息）。
 func (u *ui) pickFiles() {
-	paths, err := openFileDialog()
-	if err != nil || len(paths) == 0 {
-		return
-	}
-	for _, p := range paths {
-		if err := u.addFile(p); err != nil {
-			verbosef("添加文件失败 %s: %v", p, err)
+	go func() {
+		paths, err := openFileDialog()
+		if err != nil || len(paths) == 0 {
+			return
 		}
-	}
-	u.fileKey = ""
+		select {
+		case pickedFiles <- paths:
+		default:
+		}
+		if u.w != nil {
+			u.w.Invalidate()
+		}
+	}()
 }
 
 // addFile 把本地文件读进 store，和手机上传走同一条路径。
@@ -759,15 +775,15 @@ func (u *ui) headerText(gtx layout.Context, text string) layout.Dimensions {
 
 func (u *ui) fileRow(gtx layout.Context, i int, f FileEntry) layout.Dimensions {
 	row := &u.fileRows[i]
+
+	// Clicked() 内部会自己调一次 update，而 Layout() 也会调。
+	// 所以必须在 Layout 之前调用 —— 放进 Layout 的回调里就永远拿不到点击。
+	if row.Clicked(gtx) {
+		u.selected = i
+	}
 	selected := u.selected == i
 
-	// Clickable 必须先 Layout 才会更新内部状态，所以在回调里判断点击
 	return row.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		if row.Clicked(gtx) {
-			u.selected = i
-			selected = true
-		}
-
 		m := op.Record(gtx.Ops)
 		dims := layout.Inset{
 			Top: unit.Dp(8), Bottom: unit.Dp(8),

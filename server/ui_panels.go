@@ -175,18 +175,16 @@ func (u *ui) clipRowWidget(gtx layout.Context, i int) layout.Dimensions {
 
 	return layout.Inset{Top: unit.Dp(7), Bottom: unit.Dp(7)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-			// 方向标记
+			// 来源。原来这里画的是 ← → 箭头，但箭头本身没说明方向含义，
+			// 看的人只会觉得莫名。直接写"手机"/"电脑"。
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				arrow := "→"
-				if c.From == "手机" {
-					arrow = "←"
-				}
-				gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(20)), gtx.Dp(unit.Dp(20))))
-				l := material.Body2(u.th, arrow)
-				l.Color = uiGreen
+				gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(unit.Dp(40)), gtx.Dp(unit.Dp(20))))
+				l := material.Body2(u.th, c.From)
+				l.Color = uiMuted
+				l.TextSize = unit.Sp(12)
 				return l.Layout(gtx)
 			}),
-			layout.Rigid(layout.Spacer{Width: unit.Dp(6)}.Layout),
+			layout.Rigid(layout.Spacer{Width: unit.Dp(4)}.Layout),
 			// 内容
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				l := material.Body2(u.th, clipPreview(c.Content))
@@ -215,7 +213,9 @@ func (u *ui) refreshClips() {
 	for _, c := range clips {
 		key += c.ID
 	}
-	if key == u.clipKey {
+	// 清空之后 clips 为空、key 也是空串，只比 key 会误判成"没变化"，
+	// 列表就一直停在旧数据上。加上长度比较才兜得住。
+	if key == u.clipKey && len(clips) == len(u.clips) {
 		return
 	}
 	u.clipKey = key
