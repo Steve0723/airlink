@@ -72,11 +72,6 @@ func (u *ui) settingsPanel(gtx layout.Context) {
 						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 						layout.Rigid(u.pillButton(&u.btnReset, "重置", false)),
 						layout.Flexed(1, spacerX),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							l := material.Body2(u.th, "换网卡后手机需要重新扫码")
-							l.Color = uiMuted
-							return l.Layout(gtx)
-						}),
 					)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(10)}.Layout),
@@ -131,13 +126,7 @@ func (u *ui) settingsPanel(gtx layout.Context) {
 
 				// ---------- 公网中转 ----------
 				layout.Rigid(u.sectionTitle("公网中转")),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(4)}.Layout),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					l := material.Body2(u.th, "手机不在同一 WiFi 时走中转。两项留空表示不用。")
-					l.Color = uiMuted
-					return l.Layout(gtx)
-				}),
-				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(6)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
 						layout.Rigid(u.fieldLabel("地址")),

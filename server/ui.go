@@ -1018,9 +1018,9 @@ func (u *ui) qr() paint.ImageOp {
 func (u *ui) pairHint() string {
 	eps := u.srv.orderedEndpoints()
 	if len(eps) == 0 {
-		return "没有找到可用网络，请检查 WiFi"
+		return "没有可用网络"
 	}
-	return eps[0].Addr() + " · 同一 WiFi 下扫码"
+	return eps[0].Addr()
 }
 
 func shortToken(t string) string {

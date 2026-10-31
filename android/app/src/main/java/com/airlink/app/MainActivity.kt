@@ -462,7 +462,6 @@ private fun HomeScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("选择照片", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                        Text("从相册里挑，不会自动上传全部", color = Muted, fontSize = 12.sp)
                     }
                     OutlinedButton(
                         onClick = {
@@ -544,7 +543,7 @@ private fun HomeScreen(
             }
         }
 
-        item { SectionTitle("剪贴板", "点「复制」取走") }
+        item { SectionTitle("剪贴板", "") }
 
         item {
             Card {
