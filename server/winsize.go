@@ -18,6 +18,7 @@ var (
 	procSetWindowPos     = user32.NewProc("SetWindowPos")
 	procGetWindowRect    = user32.NewProc("GetWindowRect")
 	procGetClientRect    = user32.NewProc("GetClientRect")
+	procSetThreadDpiCtx  = user32.NewProc("SetThreadDpiAwarenessContext")
 )
 
 const (
@@ -53,8 +54,19 @@ func logicalScreen() (int, int) {
 // 所以这里必须用屏幕的物理尺寸来算，不能先除 DPI，
 // 否则窗口只有预期的一半大，面板会被裁掉。
 func preferredWindowSize(savedW, savedH int) (unit.Dp, unit.Dp) {
-	// 用户上次拖过的大小优先，这样每次打开都是他习惯的尺寸
+	// 用户上次拖过的大小优先，但要卡上限：
+	// 某次拖到接近全屏的话，之后每次打开都会溢出屏幕。
 	if savedW > 300 && savedH > 240 {
+		sw, _, _ := procGetSystemMetrics.Call(smCXScreen)
+		sh, _, _ := procGetSystemMetrics.Call(smCYScreen)
+		maxW := int(float64(sw) * 0.75)
+		maxH := int(float64(sh) * 0.75)
+		if savedW > maxW {
+			savedW = maxW
+		}
+		if savedH > maxH {
+			savedH = maxH
+		}
 		return unit.Dp(savedW), unit.Dp(savedH)
 	}
 
@@ -103,3 +115,4 @@ func realClientSize(hwnd uintptr) (int, int) {
 	}
 	return w, h
 }
+
