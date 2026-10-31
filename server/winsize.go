@@ -76,14 +76,15 @@ func preferredWindowSize(savedW, savedH int) (unit.Dp, unit.Dp) {
 	sw, _, _ := procGetSystemMetrics.Call(smCXScreen)
 	sh, _, _ := procGetSystemMetrics.Call(smCYScreen)
 
-	w := int(float64(sw) * 0.42)
-	h := int(float64(sh) * 0.46)
+	// 用户确认的尺寸：569x357 dp = 1138x714 物理，占屏幕 36%x34%
+	w := int(float64(sw) * 0.365)
+	h := int(float64(sh) * 0.343)
 
-	// 下限：文本面板 640x500dp = 1280x1000 物理
-	if minW := 1300; w < minW {
+	// 下限只防呆：太小的窗口界面会挤成一团
+	if minW := 1000; w < minW {
 		w = minW
 	}
-	if minH := 960; h < minH {
+	if minH := 700; h < minH {
 		h = minH
 	}
 
